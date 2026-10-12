@@ -106,7 +106,7 @@ h2 { font-size: 15px; font-weight: 600; margin: 0; }
 .app { display: grid; grid-template-columns: 220px minmax(0, 1fr) 280px; min-height: 100vh; }
 
 .sidebar {
-  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  position: sticky; top: env(safe-area-inset-top, 0px); height: 100vh; overflow-y: auto;
   background: linear-gradient(180deg, var(--side-1) 0%, var(--side-2) 100%);
   color: #fff; border-radius: 0 28px 0 0; padding: 22px 0 18px;
   display: flex; flex-direction: column;
@@ -303,6 +303,9 @@ dialog {
   border: 1px solid var(--border); border-radius: 14px; padding: 0; width: min(680px, calc(100vw - 32px));
   background: var(--surface); color: var(--text); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
 }
+dialog.confirm { width: min(420px, calc(100vw - 32px)); }
+.confirm p { margin: 0; padding: 22px 20px 6px; font-size: 15px; line-height: 1.6; }
+.confirm .modal-foot { border-top: 0; }
 dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
 .modal-head, .modal-foot { display: flex; align-items: center; gap: 8px; padding: 14px 20px; }
 .modal-head { justify-content: space-between; border-bottom: 1px solid var(--border); }

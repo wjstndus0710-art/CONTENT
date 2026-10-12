@@ -577,8 +577,8 @@
     }
     save(); dlg.close(); render();
   });
-  $('#btn-delete').addEventListener('click', () => {
-    if (!ui.editingId || !confirm('이 콘텐츠를 삭제할까요?')) return;
+  $('#btn-delete').addEventListener('click', async () => {
+    if (!ui.editingId || !(await ask('이 콘텐츠를 삭제할까요?', '삭제'))) return;
     items = items.filter((i) => i.id !== ui.editingId);
     save(); dlg.close(); render(); toast('삭제했습니다.');
   });
@@ -640,33 +640,33 @@
     input.onchange = () => {
       const f = input.files[0]; if (!f) return;
       const r = new FileReader();
-      r.onload = () => { try { cb(String(r.result)); } catch (e) { alert('가져오기 실패: ' + e.message); } };
+      r.onload = async () => { try { await cb(String(r.result)); } catch (e) { ask('가져오기 실패: ' + e.message, '확인', null); } };
       r.readAsText(f, 'utf-8');
     };
     input.click();
   }
 
   const actions = {
-    'import-csv': () => pickFile('.csv,.tsv,text/csv', (text) => {
+    'import-csv': () => pickFile('.csv,.tsv,text/csv', async (text) => {
       const rows = importCSV(text);
-      const replace = items.length && confirm(`${rows.length}건을 불러왔습니다.\n\n[확인] 기존 데이터를 교체\n[취소] 기존 데이터에 추가`);
+      const replace = items.length && (await ask(`CSV에서 ${rows.length}건을 읽었습니다. 기존 데이터는 어떻게 할까요?`, '기존 데이터 교체', '기존 데이터에 추가'));
       items = replace ? rows : items.concat(rows);
       save(); render(); toast(`CSV ${rows.length}건을 가져왔습니다.`);
     }),
     'export-csv': () => download(`콘텐츠_${toISO(today())}.csv`, toCSV(filtered({ ignorePeriod: true })), 'text/csv;charset=utf-8'),
     'export-json': () => download(`content-backup_${toISO(today())}.json`, JSON.stringify(items, null, 2), 'application/json'),
-    'import-json': () => pickFile('.json,application/json', (text) => {
+    'import-json': () => pickFile('.json,application/json', async (text) => {
       const arr = JSON.parse(text);
       if (!Array.isArray(arr)) throw new Error('올바른 백업 파일이 아닙니다.');
-      if (!confirm(`백업 ${arr.length}건으로 현재 데이터를 교체할까요?`)) return;
+      if (!(await ask(`백업 ${arr.length}건으로 현재 데이터를 교체할까요?`, '교체'))) return;
       items = arr.map(normalize); save(); render(); toast('백업을 불러왔습니다.');
     }),
-    'load-sample': () => {
-      if (items.length && !confirm('현재 데이터를 샘플 데이터로 교체할까요?')) return;
+    'load-sample': async () => {
+      if (items.length && !(await ask('현재 데이터를 샘플 데이터로 교체할까요?', '교체'))) return;
       items = sampleData(); save(); render(); toast('샘플 데이터를 불러왔습니다.');
     },
-    'clear-all': () => {
-      if (!confirm('모든 콘텐츠를 삭제할까요? 되돌릴 수 없습니다. (먼저 백업을 저장해 두세요)')) return;
+    'clear-all': async () => {
+      if (!(await ask('모든 콘텐츠를 삭제할까요? 되돌릴 수 없으니 먼저 백업을 저장해 두세요.', '전체 삭제'))) return;
       items = []; save(); render(); toast('전체 삭제했습니다.');
     },
   };
@@ -770,6 +770,21 @@
     if (e.key === 'n' || e.key === 'N') { e.preventDefault(); openEditor(null); }
     if (e.key === '/') { e.preventDefault(); $('#f-search').focus(); }
   });
+
+  // 브라우저 confirm()/alert() 대신 쓰는 페이지 내 확인 창. 취소 라벨이 null이면 확인 버튼만 표시.
+  function ask(message, okLabel = '확인', cancelLabel = '취소') {
+    const box = $('#confirm');
+    $('#confirm-msg').textContent = message;
+    $('#confirm-ok').textContent = okLabel;
+    const cancel = $('#confirm-cancel');
+    cancel.hidden = cancelLabel === null;
+    cancel.textContent = cancelLabel || '';
+    box.returnValue = '';
+    box.showModal();
+    return new Promise((resolve) => {
+      box.addEventListener('close', () => resolve(box.returnValue === 'ok'), { once: true });
+    });
+  }
 
   let toastTimer;
   function toast(msg) {
