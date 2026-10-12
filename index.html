@@ -20,9 +20,11 @@
       <button class="tab" data-view="list" role="tab"><span>☰</span> 운영 현황</button>
       <button class="tab" data-view="calendar" role="tab"><span>▤</span> 콘텐츠 캘린더</button>
       <button class="tab" data-view="keywords" role="tab"><span>#</span> 키워드 관리</button>
+      <button class="tab" data-view="blog" role="tab"><span>↗</span> 블로그 성과</button>
       <div class="nav-section">데이터 관리</div>
       <div class="nav-sub" id="menu-data">
         <button data-action="import-file">엑셀/CSV 가져오기</button>
+        <button data-action="import-stats">블로그 성과 가져오기</button>
         <button data-action="export-csv">CSV 내보내기</button>
         <button data-action="export-json">백업 저장 (JSON)</button>
         <button data-action="import-json">백업 불러오기</button>
@@ -165,6 +167,46 @@
           </div>
         </article>
       </section>
+      <!-- 블로그 성과 -->
+      <section class="view" id="view-blog">
+        <div class="example-banner" id="stats-example" hidden>
+          <span><b>예시 숫자입니다.</b> 실제 기록을 처음 저장하면 예시는 자동으로 지워집니다.</span>
+          <button class="btn btn-sm" data-action="clear-example">예시 지우기</button>
+        </div>
+        <div class="blog-toolbar">
+          <div class="seg" id="stats-period" role="group" aria-label="기간 단위">
+            <button data-period="week">주간</button><button data-period="month" class="is-on">월간</button>
+          </div>
+          <div class="seg" id="stats-metric" role="group" aria-label="지표">
+            <button data-metric="views" class="is-on">조회수</button><button data-metric="visitors">방문자수</button><button data-metric="neighbors">이웃 수</button>
+          </div>
+          <span class="spacer"></span>
+          <button class="btn btn-primary" id="btn-add-stat">+ 성과 기록</button>
+        </div>
+        <div class="hero" id="blog-cards"></div>
+        <article class="card grid-1">
+          <header class="card-head">
+            <h2 id="trend-title">조회수 추이</h2>
+            <span class="muted" id="trend-sub"></span>
+          </header>
+          <div class="legend" id="trend-legend"></div>
+          <div id="chart-trend" class="chart"></div>
+        </article>
+        <article class="card grid-1">
+          <header class="card-head">
+            <h2>기간별 성과 · 증감률</h2>
+            <span class="muted">증감률 = (이번 기간 − 직전 기간) ÷ 직전 기간</span>
+          </header>
+          <div class="table-wrap"><table class="table" id="period-table"></table></div>
+        </article>
+        <article class="card">
+          <header class="card-head">
+            <h2>입력한 기록 <span class="muted" id="stats-count"></span></h2>
+            <span class="muted">행을 누르면 수정 · 기준일 하나에 블로그별 1건</span>
+          </header>
+          <div class="table-wrap"><table class="table" id="stats-table"></table></div>
+        </article>
+      </section>
     </main>
   </div>
 
@@ -173,6 +215,10 @@
     <section class="side-block">
       <h3>채널 배포 할 일 <span class="muted" id="todo-count"></span></h3>
       <ul id="todo" class="upcoming"></ul>
+    </section>
+    <section class="side-block">
+      <h3>블로그 성과 <span class="muted" id="side-blog-sub"></span></h3>
+      <ul id="side-blog" class="side-list"></ul>
     </section>
     <section class="side-block">
       <h3>사업부별 평균 진행률</h3>
@@ -215,6 +261,31 @@
     </form>
   </dialog>
 
+  <!-- 블로그 성과 입력 -->
+  <dialog id="stat-editor">
+    <form method="dialog" id="stat-form">
+      <header class="modal-head">
+        <h2 id="stat-title">블로그 성과 기록</h2>
+        <button type="button" class="btn btn-ghost btn-sm" data-close aria-label="닫기">✕</button>
+      </header>
+      <div class="form-grid">
+        <label>블로그<input name="blog" id="s-blog" list="dl-blog" required /></label>
+        <label>기준일<input type="date" name="date" id="s-date" required /></label>
+        <p class="span-2 form-hint">하루치, 한 주 합계, 한 달 합계 어느 것이든 기록할 수 있습니다. 월 합계는 그 달 1일, 주 합계는 그 주 월요일로 입력하세요.</p>
+        <label>조회수<input type="number" min="0" name="views" id="s-views" inputmode="numeric" /></label>
+        <label>방문자수<input type="number" min="0" name="visitors" id="s-visitors" inputmode="numeric" /></label>
+        <label>이웃 수 (기준일 현재)<input type="number" min="0" name="neighbors" id="s-neighbors" inputmode="numeric" /></label>
+        <label>메모<input name="memo" id="s-memo" placeholder="예: 추석 연휴, 상위 노출 글 발생" /></label>
+      </div>
+      <footer class="modal-foot">
+        <button type="button" class="btn btn-danger-ghost" id="btn-delete-stat">삭제</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn btn-ghost" data-close>취소</button>
+        <button type="submit" class="btn btn-primary" value="save">저장</button>
+      </footer>
+    </form>
+  </dialog>
+
   <dialog id="confirm" class="confirm">
     <form method="dialog">
       <p id="confirm-msg"></p>
@@ -228,6 +299,7 @@
 
   <datalist id="dl-owner"></datalist>
   <datalist id="dl-source"></datalist>
+  <datalist id="dl-blog"></datalist>
   <input type="file" id="file-input" hidden />
   <div class="tooltip" id="tooltip" role="tooltip" hidden></div>
   <div class="toast" id="toast" hidden></div>
