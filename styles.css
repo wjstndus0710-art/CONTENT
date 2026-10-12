@@ -120,6 +120,13 @@ h2 { font-size: 15px; font-weight: 600; margin: 0; }
 .profile { margin: 0 14px 14px; padding: 14px; border-radius: 14px; background: rgba(255, 255, 255, 0.12); }
 .profile-name { font-weight: 700; margin-bottom: 8px; }
 .profile-stats div { display: flex; justify-content: space-between; font-size: 12px; opacity: 0.92; padding: 2px 0; }
+.sync { margin-top: 10px; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.sync::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #ffd84d; flex: none; }
+.sync.ok::before { background: #5ff0a4; }
+.sync.busy::before { background: #ffffff; animation: pulse 1s ease-in-out infinite; }
+.sync.error::before { background: #ff8a8a; }
+@keyframes pulse { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .sync.busy::before { animation: none; } }
 .profile-stats b { font-variant-numeric: tabular-nums; }
 .nav { display: flex; flex-direction: column; flex: 1; }
 .nav-section { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.6; padding: 14px 22px 6px; }

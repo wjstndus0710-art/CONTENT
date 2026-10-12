@@ -111,7 +111,8 @@
   }
   function save() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); }
-    catch (e) { toast('브라우저 저장에 실패했습니다. JSON 백업을 받아 두세요.'); }
+    catch (e) { if (!cloud.db) toast('브라우저 저장에 실패했습니다. JSON 백업을 받아 두세요.'); }
+    pushCollection('items', items);
   }
   function normDivision(v) {
     const s = String(v || '').replace(/^[^\p{L}\p{N}]+/u, '').trim(); // 앞의 이모지 제거
@@ -147,6 +148,7 @@
   }
 
   // ---------- 상태 ----------
+  const cloud = { db: null, connecting: false, pending: 0, error: '' };
   let items = load();
   const ui = {
     view: 'dashboard',
@@ -306,7 +308,7 @@
 
   function renderSide() {
     const t = today();
-    $('#today-label').textContent = `오늘은 ${t.getFullYear()}년 ${t.getMonth() + 1}월 ${t.getDate()}일 (${DOW[t.getDay()]}) · 데이터는 이 브라우저에 저장됩니다`;
+    $('#today-label').textContent = `오늘은 ${t.getFullYear()}년 ${t.getMonth() + 1}월 ${t.getDate()}일 (${DOW[t.getDay()]}) `;
     const all = filtered({ ignorePeriod: true });
     $('#profile-stats').innerHTML = `
       <div><span>전체 콘텐츠</span><b>${fmt(items.length)}</b></div>
@@ -674,7 +676,13 @@
     const val = (i, k) => (k === 'progress' ? progress(i) : k.startsWith('ch:') ? i.channels[k.slice(3)] : k === 'division' ? divLabel(i.division) : i[k]);
     return '﻿' + [COLUMNS.map((c) => c[1]).join(','), ...list.map((i) => COLUMNS.map(([k]) => cell(val(i, k))).join(','))].join('\r\n');
   }
-  function download(name, content, type) {
+  async function download(name, content, type) {
+    const dl = await useCap('downloads');
+    if (dl) {
+      try { await dl.save({ filename: name, data: content }); }
+      catch (e) { if (e && e.code !== 'declined') toast('파일을 저장하지 못했습니다. 잠시 후 다시 시도하세요.'); }
+      return;
+    }
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([content], { type }));
     a.download = name; a.click();
@@ -773,7 +781,10 @@
     try { const raw = localStorage.getItem(STATS_KEY); if (raw) return JSON.parse(raw).map(normStat); } catch (e) { /* 무시 */ }
     return seedStats();
   }
-  function saveStats() { try { localStorage.setItem(STATS_KEY, JSON.stringify(stats)); } catch (e) { toast('브라우저 저장에 실패했습니다.'); } }
+  function saveStats() {
+    try { localStorage.setItem(STATS_KEY, JSON.stringify(stats)); } catch (e) { if (!cloud.db) toast('브라우저 저장에 실패했습니다.'); }
+    pushCollection('blogStats', stats);
+  }
   let stats = loadStats();
 
   function blogs() { return uniq([...BLOGS_DEFAULT, ...stats.map((r) => r.blog)]).sort((a, b) => ((BLOGS_DEFAULT.indexOf(a) + 1 || 99) - (BLOGS_DEFAULT.indexOf(b) + 1 || 99))); }
@@ -1151,8 +1162,82 @@
     clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 2200);
   }
 
+  // ---------- 서버 저장 ----------
+  // claude.ai 링크에서 열면 서버 저장소(db)에 저장하고, 파일로 열면 이 브라우저(localStorage)에만 저장한다.
+  // 화면은 브라우저 캐시로 바로 그린 뒤 서버 데이터가 오면 다시 그린다.
+  function useCap(name) { return window.claude && typeof window.claude.use === 'function' ? window.claude.use(name).catch(() => null) : Promise.resolve(null); }
+  const NORMALIZERS = { items: (r) => normalize(r), blogStats: (r) => normStat(r) };
+  const synced = { items: null, blogStats: null }; // id → 서버에 있는 JSON. null이면 아직 서버 상태를 모름
+  let writeChain = Promise.resolve();
+
+  function pushCollection(name, list) {
+    const known = synced[name];
+    if (!cloud.db || !known) return;
+    const now = new Map(list.map((r) => [r.id, JSON.stringify(r)]));
+    now.forEach((json, id) => { if (known.get(id) !== json) { known.set(id, json); queueWrite(name, id, JSON.parse(json)); } });
+    [...known.keys()].forEach((id) => { if (!now.has(id)) { known.delete(id); queueWrite(name, id, null); } });
+  }
+  // 문서 쓰기는 한 번에 하나씩 순서대로. 일시적 오류(unavailable)는 한 번만 다시 시도한다.
+  function queueWrite(name, id, body) {
+    cloud.pending++; setSync();
+    const ref = cloud.db.collection(name).doc(id);
+    const run = () => (body ? ref.set(body) : ref.delete());
+    writeChain = writeChain
+      .then(() => run().catch((e) => (e && e.code === 'unavailable' ? new Promise((r) => setTimeout(r, 600 + Math.random() * 900)).then(run) : Promise.reject(e))))
+      .catch((e) => {
+        cloud.error = e && e.code === 'quota_exceeded' ? '저장 공간이 가득 찼습니다. 오래된 기록을 지운 뒤 다시 시도하세요.' : '서버에 저장하지 못했습니다. 새로고침한 뒤 다시 시도하세요.';
+        toast(cloud.error);
+      })
+      .finally(() => { cloud.pending--; setSync(); });
+  }
+  function setSync() {
+    const el = $('#sync-status');
+    if (!el) return;
+    let cls = 'local', txt = '이 브라우저에만 저장';
+    if (cloud.connecting) { cls = 'busy'; txt = '서버 연결 중…'; }
+    else if (cloud.db && cloud.error) { cls = 'error'; txt = '⚠ 저장 실패 · 새로고침 필요'; }
+    else if (cloud.db && cloud.pending) { cls = 'busy'; txt = `저장 중… (${cloud.pending})`; }
+    else if (cloud.db) { cls = 'ok'; txt = '서버에 저장됨'; }
+    el.className = 'sync ' + cls;
+    el.textContent = txt;
+    el.title = cloud.db ? '어느 기기에서 열어도 같은 데이터가 보입니다. 이 링크의 데이터는 소유자만 볼 수 있습니다.' : '이 브라우저에만 저장됩니다. 다른 기기에서는 보이지 않으니 JSON 백업을 받아 두세요.';
+  }
+  function subscribe(name) {
+    cloud.db.collection(name).onSnapshot((snap) => {
+      // 첫 응답이 캐시라 비어 있으면 서버 응답을 기다린다.
+      if (!synced[name] && snap.empty && snap.metadata.fromCache) return;
+      const rows = snap.docs.map((d) => NORMALIZERS[name](d.data()));
+      const first = !synced[name];
+      synced[name] = new Map(rows.map((r) => [r.id, JSON.stringify(r)]));
+      if (first && !rows.length) {
+        // 서버가 비어 있으면 이 브라우저에 있던 데이터를 올린다.
+        pushCollection(name, name === 'items' ? items : stats);
+      } else {
+        if (name === 'items') items = rows; else stats = rows;
+        try { localStorage.setItem(name === 'items' ? STORAGE_KEY : STATS_KEY, JSON.stringify(rows)); } catch (e) { /* 캐시 실패는 무시 */ }
+      }
+      if (first) { cloud.connecting = Object.values(synced).some((v) => !v); setSync(); }
+      render();
+    }, (e) => {
+      cloud.error = e && e.code === 'revoked' ? '' : '서버와 연결이 끊어졌습니다. 새로고침하세요.';
+      if (e && e.code === 'revoked') cloud.db = null;
+      setSync();
+    });
+  }
+  async function connectCloud() {
+    if (!window.claude) { setSync(); return; }
+    cloud.connecting = true; setSync();
+    const db = await useCap('db');
+    if (!db) { cloud.connecting = false; setSync(); return; }
+    cloud.db = db;
+    subscribe('items');
+    subscribe('blogStats');
+  }
+
   // ---------- 시작 ----------
+  if (!window.SEED_DATA) $$('[data-action="load-seed"]').forEach((b) => { b.hidden = true; });
   try { const v = localStorage.getItem(STORAGE_KEY + ':view'); if (v && $('#view-' + v)) ui.view = v; } catch (e) { /* 무시 */ }
   save();
   setView(ui.view);
+  connectCloud();
 })();
