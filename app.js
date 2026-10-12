@@ -27,10 +27,10 @@
   const STATUS_KEYS = STATUSES.map((s) => s.key);
   const DONE = '발행완료';
   const NAVER = [
-    { key: 'Y', label: '노출됨', color: 'var(--st-good)' },
-    { key: 'N', label: '미노출', color: 'var(--st-critical)' },
-    { key: '뉴스레터만', label: '', color: 'var(--st-warning)' },
-    { key: '', label: '미확인', color: 'var(--axis)' },
+    { key: 'Y', label: '노출됨', color: 'var(--accent)' },
+    { key: 'N', label: '미노출', color: 'var(--bad-text)' },
+    { key: '뉴스레터만', label: '', color: 'var(--g1)' },
+    { key: '', label: '미확인', color: 'var(--g3)' },
   ];
 
   // 시트 열 ↔ 필드. 내보내기도 이 순서(=원래 시트 순서)를 따른다.
@@ -79,7 +79,8 @@
   const DOW = ['일', '월', '화', '수', '목', '금', '토'];
 
   const divInfo = (key) => DIVISIONS.find((d) => d.key === key) || { key, icon: '' };
-  const divColor = (key) => { const i = DIVISIONS.findIndex((d) => d.key === key); return i < 0 ? 'var(--s8)' : `var(--s${i + 1})`; };
+  // 색을 줄이기 위해 사업부는 색 대신 아이콘과 이름으로 구분한다.
+  const divColor = () => 'var(--g2)';
   const divLabel = (key) => (key ? `${divInfo(key).icon} ${key}`.trim() : '–');
   const divBadge = (key) => `<span class="chan" style="--c:${divColor(key)}">${esc(divLabel(key))}</span>`;
   const statusInfo = (st) => STATUSES.find((s) => s.key === st);
@@ -252,7 +253,8 @@
 
     // 채널별 상태 누적 막대
     const order = [...STATUSES].reverse(); // 발행완료부터
-    const segColor = { done: 'var(--st-good)', reserved: 'var(--s1)', review: 'var(--st-warning)', writing: 'var(--s7)', todo: 'var(--axis)', none: 'var(--grid)' };
+    // 진행 단계 순서대로 진한 색 → 옅은 색
+    const segColor = { done: 'var(--accent)', reserved: 'var(--g1)', review: 'var(--g2)', writing: 'var(--g3)', todo: 'var(--g4)', none: 'var(--surface)' };
     $('#channel-legend').innerHTML = order.map((s) => `<span class="lg"><i style="background:${segColor[s.cls]}"></i>${s.key}</span>`).join('') + `<span class="lg"><i style="background:${segColor.none}"></i>빈칸</span>`;
     const rows = CHANNELS.map((c) => {
       const segs = order.map((s) => ({ key: s.key, cls: s.cls, n: list.filter((i) => i.channels[c] === s.key).length }));
@@ -449,22 +451,22 @@
   // ---------- 차트 (SVG) ----------
   function stackedBars(el, rows, colors) {
     if (!rows[0] || !rows[0].total) { el.innerHTML = '<div class="chart-empty">콘텐츠가 없습니다.</div>'; return; }
-    const W = 520, rowH = 38, padL = 76, padR = 54, bh = 20, H = rows.length * rowH + 4;
+    const W = chartWidth(el), rowH = 30, padL = 64, padR = 52, bh = 14, H = rows.length * rowH + 4;
     const iw = W - padL - padR;
-    let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="채널별 배포 상태 누적 막대">`;
+    let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="채널별 배포 상태 누적 막대">`;
     rows.forEach((r, i) => {
       const y = i * rowH + 8;
       let x = padL;
-      s += `<text class="label" x="${padL - 10}" y="${y + bh / 2 + 5}" text-anchor="end">${esc(r.label)}</text>`;
+      s += `<text class="label" x="${padL - 10}" y="${y + bh / 2 + 4}" text-anchor="end">${esc(r.label)}</text>`;
       r.segs.forEach((g) => {
         if (!g.n) return;
         const w = (iw * g.n) / r.total;
-        s += `<g data-i="${i}" data-seg="${esc(g.key)}"><rect x="${x}" y="${y}" width="${Math.max(0, w - 2)}" height="${bh}" rx="3" fill="${colors[g.cls]}"/>
+        s += `<g data-i="${i}" data-seg="${esc(g.key)}"><rect x="${x}" y="${y}" width="${Math.max(0, w - 2)}" height="${bh}" rx="2" fill="${colors[g.cls]}"/>
           <rect class="hit" x="${x}" y="${y - 8}" width="${w}" height="${rowH}"/></g>`;
         x += w;
       });
       const done = r.segs.find((g) => g.key === DONE).n;
-      s += `<text class="value" x="${W - padR + 8}" y="${y + bh / 2 + 5}">${done}/${r.total}</text>`;
+      s += `<text class="value" x="${W - padR + 8}" y="${y + bh / 2 + 4}">${done}/${r.total}</text>`;
     });
     s += '</svg>';
     el.innerHTML = s;
@@ -477,15 +479,15 @@
 
   function hBarChart(el, data, tip, onClick) {
     if (!data.length) { el.innerHTML = '<div class="chart-empty">콘텐츠가 없습니다.</div>'; return; }
-    const W = 520, rowH = 36, padL = 116, padR = 44, H = data.length * rowH + 8;
+    const W = chartWidth(el), rowH = 30, padL = 104, padR = 40, H = data.length * rowH + 8;
     const max = Math.max(...data.map((d) => d.value)) || 1;
-    let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="사업부별 콘텐츠 수 막대 차트">`;
+    let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="사업부별 콘텐츠 수 막대 차트">`;
     data.forEach((d, i) => {
-      const y = i * rowH + 8, bh = 18, w = Math.max(2, ((W - padL - padR) * d.value) / max);
+      const y = i * rowH + 8, bh = 14, w = Math.max(2, ((W - padL - padR) * d.value) / max);
       s += `<g data-i="${i}" class="${onClick ? 'clickable' : ''}">
-        <text class="label" x="${padL - 10}" y="${y + bh / 2 + 5}" text-anchor="end">${esc(d.label)}</text>
-        <path class="bar" style="fill:${divColor(d.key)}" d="${roundedRight(padL, y, w, bh, 4)}"/>
-        <text class="value" x="${padL + w + 8}" y="${y + bh / 2 + 5}">${d.value}</text>
+        <text class="label" x="${padL - 10}" y="${y + bh / 2 + 4}" text-anchor="end">${esc(d.label)}</text>
+        <path class="bar ${i === 0 ? 'hi' : ''}" d="${roundedRight(padL, y, w, bh, 3)}"/>
+        <text class="value ${i === 0 ? 'hi' : ''}" x="${padL + w + 8}" y="${y + bh / 2 + 4}">${d.value}</text>
         <rect class="hit" x="0" y="${y - 8}" width="${W}" height="${rowH}"/>
       </g>`;
     });
@@ -500,12 +502,12 @@
   }
 
   function vBarChart(el, data, tip) {
-    const W = 520, H = 240, padL = 40, padR = 8, padT = 22, padB = 30;
+    const W = chartWidth(el), H = 200, padL = 32, padR = 8, padT = 20, padB = 26;
     const max = niceMax(Math.max(...data.map((d) => d.value)));
     const iw = W - padL - padR, ih = H - padT - padB;
-    const bw = Math.min(44, (iw / data.length) * 0.55);
+    const bw = Math.min(40, (iw / data.length) * 0.5);
     const y = (v) => padT + ih - (ih * v) / max;
-    let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="월별 원문 발행 수 막대 차트">`;
+    let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="월별 원문 발행 수 막대 차트">`;
     for (let k = 1; k <= 4; k++) {
       const v = (max / 4) * k;
       s += `<line class="grid-line" x1="${padL}" x2="${W - padR}" y1="${y(v)}" y2="${y(v)}"/><text class="tick" x="${padL - 6}" y="${y(v) + 4}" text-anchor="end">${fmt(v)}</text>`;
@@ -513,7 +515,7 @@
     data.forEach((d, i) => {
       const cx = padL + (iw / data.length) * (i + 0.5), h = (ih * d.value) / max;
       s += `<g data-i="${i}">
-        ${d.value ? `<path class="bar" d="${roundedTop(cx - bw / 2, y(d.value), bw, h, 4)}"/><text class="value" x="${cx}" y="${y(d.value) - 6}" text-anchor="middle">${d.value}</text>` : ''}
+        ${d.value ? `<path class="bar ${i === data.length - 1 ? 'hi' : ''}" d="${roundedTop(cx - bw / 2, y(d.value), bw, h, 6)}"/><text class="value ${i === data.length - 1 ? 'hi' : ''}" x="${cx}" y="${y(d.value) - 6}" text-anchor="middle">${d.value}</text>` : ''}
         <text class="tick" x="${cx}" y="${H - 8}" text-anchor="middle">${esc(d.label)}</text>
         <rect class="hit" x="${cx - iw / data.length / 2}" y="${padT}" width="${iw / data.length}" height="${ih}"/>
       </g>`;
@@ -527,6 +529,8 @@
     });
   }
 
+  // 차트는 컨테이너의 실제 픽셀 너비로 그린다(화면이 넓어도 글자·막대 크기는 그대로).
+  function chartWidth(el) { return Math.max(280, Math.floor(el.clientWidth || el.parentElement?.clientWidth || 520)); }
   function niceMax(v) {
     if (!v) return 4;
     const p = Math.pow(10, Math.floor(Math.log10(v))), n = v / p;
@@ -889,19 +893,19 @@
   // 여러 블로그를 한 축에 그리는 선 차트 (같은 지표끼리만)
   function lineMulti(el, labels, fullLabels, series, metric) {
     if (!series.length || series.every((sr) => sr.values.every((v) => v == null))) { el.innerHTML = '<div class="chart-empty">표시할 기록이 없습니다.</div>'; return; }
-    const W = 1080, H = 300, padL = 56, padR = 120, padT = 16, padB = 30;
+    const W = chartWidth(el), H = 260, padL = 48, padR = 96, padT = 14, padB = 26;
     const iw = W - padL - padR, ih = H - padT - padB, n = labels.length;
     const vals = series.flatMap((sr) => sr.values).filter((v) => v != null);
     const max = niceMax(Math.max(...vals));
     const x = (i) => padL + (n === 1 ? iw / 2 : (iw * i) / (n - 1));
     const y = (v) => padT + ih - (ih * v) / max;
     const tick = metric === 'dwell' ? (v) => (+v).toFixed(1) : fmtShort;
-    let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="블로그별 ${METRIC_LABEL[metric]} 추이">`;
+    let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="블로그별 ${METRIC_LABEL[metric]} 추이">`;
     for (let k = 0; k <= 4; k++) {
       const v = (max / 4) * k;
       s += `<line class="${k ? 'grid-line' : 'baseline'}" x1="${padL}" x2="${W - padR}" y1="${y(v)}" y2="${y(v)}"/><text class="tick" x="${padL - 8}" y="${y(v) + 4}" text-anchor="end">${tick(v)}</text>`;
     }
-    const step = Math.ceil(n / 12);
+    const step = Math.ceil(n / Math.max(4, Math.floor((W - padL - padR) / 64)));
     labels.forEach((l, i) => { if (i % step === (n - 1) % step) s += `<text class="tick" x="${x(i)}" y="${H - 8}" text-anchor="middle">${esc(l)}</text>`; });
     s += `<line class="crosshair" x1="0" x2="0" y1="${padT}" y2="${padT + ih}" visibility="hidden"/>`;
     const ends = [];
@@ -1233,6 +1237,12 @@
     subscribe('items');
     subscribe('blogStats');
   }
+
+  let resizeTimer, lastW = innerWidth;
+  addEventListener('resize', () => {
+    if (innerWidth === lastW) return;
+    lastW = innerWidth; clearTimeout(resizeTimer); resizeTimer = setTimeout(render, 150);
+  });
 
   // ---------- 시작 ----------
   if (!window.SEED_DATA) $$('[data-action="load-seed"]').forEach((b) => { b.hidden = true; });
