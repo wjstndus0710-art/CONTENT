@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>콘텐츠 대시보드</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">◆</span> 콘텐츠보드</div>
+    <div class="profile">
+      <div class="profile-name">콘텐츠 마케팅팀</div>
+      <div class="profile-stats" id="profile-stats"></div>
+    </div>
+    <nav class="nav" role="tablist">
+      <div class="nav-section">Dashboard</div>
+      <button class="tab is-active" data-view="dashboard" role="tab"><span>▦</span> 대시보드</button>
+      <button class="tab" data-view="list" role="tab"><span>☰</span> 콘텐츠 목록</button>
+      <button class="tab" data-view="board" role="tab"><span>▥</span> 칸반 보드</button>
+      <button class="tab" data-view="calendar" role="tab"><span>▤</span> 캘린더</button>
+      <div class="nav-section">데이터 관리</div>
+      <div class="nav-sub" id="menu-data">
+        <button data-action="import-csv">CSV 가져오기 (시트에서)</button>
+        <button data-action="export-csv">CSV 내보내기</button>
+        <button data-action="export-json">백업 저장 (JSON)</button>
+        <button data-action="import-json">백업 불러오기</button>
+        <button data-action="load-sample">샘플 데이터</button>
+        <button data-action="clear-all">전체 삭제</button>
+      </div>
+    </nav>
+    <button class="theme-btn" id="btn-theme" aria-label="테마 전환">◐ 라이트 / 다크</button>
+  </aside>
+
+  <div class="main-col">
+    <header class="page-head">
+      <div>
+        <div class="greet"><b>콘텐츠 마케팅팀</b>님 안녕하세요!</div>
+        <div class="muted" id="today-label"></div>
+      </div>
+      <button class="btn btn-primary" id="btn-add">+ 새 콘텐츠</button>
+    </header>
+
+    <section class="filters" aria-label="필터">
+      <input type="search" id="f-search" placeholder="제목·태그·캠페인 검색  ( / )" />
+      <select id="f-channel"><option value="">모든 채널</option></select>
+      <select id="f-status"><option value="">모든 상태</option></select>
+      <select id="f-owner"><option value="">모든 담당자</option></select>
+      <select id="f-campaign"><option value="">모든 캠페인</option></select>
+      <select id="f-period">
+        <option value="all">전체 기간</option>
+        <option value="30">최근 30일</option>
+        <option value="90" selected>최근 90일</option>
+        <option value="month">이번 달</option>
+        <option value="year">올해</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" id="f-reset">초기화</button>
+    </section>
+
+  <main>
+    <!-- 대시보드 -->
+    <section class="view is-active" id="view-dashboard">
+      <div class="hero" id="hero"></div>
+      <div class="card strip" id="strip"></div>
+
+      <div class="grid-2">
+        <article class="card">
+          <header class="card-head">
+            <h2>채널별 조회수</h2>
+            <span class="muted" id="ch-sub"></span>
+          </header>
+          <div id="chart-channel" class="chart"></div>
+        </article>
+        <article class="card">
+          <header class="card-head">
+            <h2>제작 파이프라인</h2>
+            <span class="muted">상태별 콘텐츠 수</span>
+          </header>
+          <div id="pipeline" class="pipeline"></div>
+        </article>
+      </div>
+
+      <div class="grid-2">
+        <article class="card">
+          <header class="card-head">
+            <h2>월별 발행 수</h2>
+            <span class="muted">최근 6개월</span>
+          </header>
+          <div id="chart-monthly-count" class="chart"></div>
+        </article>
+        <article class="card">
+          <header class="card-head">
+            <h2>월별 조회수</h2>
+            <span class="muted">발행월 기준 · 최근 6개월</span>
+          </header>
+          <div id="chart-monthly-views" class="chart"></div>
+        </article>
+      </div>
+
+      <div class="grid-1">
+        <article class="card">
+          <header class="card-head">
+            <h2>성과 상위 콘텐츠</h2>
+            <select id="top-metric" class="select-sm">
+              <option value="views">조회수</option>
+              <option value="engagement">참여율</option>
+              <option value="clicks">클릭</option>
+              <option value="conversions">전환</option>
+            </select>
+          </header>
+          <div id="top-content"></div>
+        </article>
+      </div>
+    </section>
+
+    <!-- 목록 -->
+    <section class="view" id="view-list">
+      <article class="card">
+        <header class="card-head">
+          <h2>콘텐츠 목록 <span class="muted" id="list-count"></span></h2>
+          <span class="muted">열 제목을 눌러 정렬 · 행을 눌러 편집</span>
+        </header>
+        <div class="table-wrap">
+          <table class="table" id="content-table">
+            <thead>
+              <tr>
+                <th data-sort="title">제목</th>
+                <th data-sort="channel">채널</th>
+                <th data-sort="status">상태</th>
+                <th data-sort="owner">담당자</th>
+                <th data-sort="campaign">캠페인</th>
+                <th data-sort="dueDate">마감일</th>
+                <th data-sort="publishDate">발행일</th>
+                <th data-sort="views" class="num">조회수</th>
+                <th data-sort="engagement" class="num">참여율</th>
+                <th data-sort="clicks" class="num">클릭</th>
+                <th data-sort="conversions" class="num">전환</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="empty" id="list-empty" hidden>조건에 맞는 콘텐츠가 없습니다.</p>
+      </article>
+    </section>
+
+    <!-- 칸반 -->
+    <section class="view" id="view-board">
+      <p class="hint">카드를 끌어서 다른 열에 놓으면 상태가 바뀝니다.</p>
+      <div class="board" id="board"></div>
+    </section>
+
+    <!-- 캘린더 -->
+    <section class="view" id="view-calendar">
+      <article class="card">
+        <header class="card-head">
+          <div class="cal-nav">
+            <button class="btn btn-ghost btn-sm" id="cal-prev" aria-label="이전 달">‹</button>
+            <h2 id="cal-title"></h2>
+            <button class="btn btn-ghost btn-sm" id="cal-next" aria-label="다음 달">›</button>
+            <button class="btn btn-ghost btn-sm" id="cal-today">오늘</button>
+          </div>
+          <label class="muted cal-mode">
+            기준
+            <select id="cal-field" class="select-sm">
+              <option value="publishDate">발행일</option>
+              <option value="dueDate">마감일</option>
+            </select>
+          </label>
+        </header>
+        <div class="cal-legend" id="cal-legend"></div>
+        <div class="calendar" id="calendar"></div>
+      </article>
+    </section>
+  </main>
+  </div>
+
+  <aside class="rightbar">
+    <div class="promo" id="promo"></div>
+    <section class="side-block">
+      <h3>다가오는 일정 <span class="muted">14일</span></h3>
+      <ul id="upcoming" class="upcoming"></ul>
+    </section>
+    <section class="side-block">
+      <h3>캠페인 현황</h3>
+      <ul id="campaigns" class="side-list"></ul>
+    </section>
+  </aside>
+</div>
+
+  <!-- 편집 모달 -->
+  <dialog id="editor">
+    <form method="dialog" id="editor-form">
+      <header class="modal-head">
+        <h2 id="editor-title">새 콘텐츠</h2>
+        <button type="button" class="btn btn-ghost btn-sm" data-close aria-label="닫기">✕</button>
+      </header>
+      <div class="form-grid">
+        <label class="span-2">제목 *<input name="title" required /></label>
+        <label>채널<select name="channel"></select></label>
+        <label>형식<select name="format"></select></label>
+        <label>상태<select name="status"></select></label>
+        <label>담당자<input name="owner" list="dl-owner" /></label>
+        <label>캠페인<input name="campaign" list="dl-campaign" /></label>
+        <label>태그 (쉼표 구분)<input name="tags" placeholder="예: SEO, 신제품" /></label>
+        <label>마감일<input type="date" name="dueDate" /></label>
+        <label>발행일<input type="date" name="publishDate" /></label>
+        <label class="span-2">URL<input type="url" name="url" placeholder="https://" /></label>
+        <fieldset class="span-2 metrics">
+          <legend>성과 지표</legend>
+          <label>조회수<input type="number" min="0" name="views" /></label>
+          <label>좋아요<input type="number" min="0" name="likes" /></label>
+          <label>댓글<input type="number" min="0" name="comments" /></label>
+          <label>공유<input type="number" min="0" name="shares" /></label>
+          <label>클릭<input type="number" min="0" name="clicks" /></label>
+          <label>전환<input type="number" min="0" name="conversions" /></label>
+        </fieldset>
+        <label class="span-2">메모<textarea name="notes" rows="3"></textarea></label>
+      </div>
+      <footer class="modal-foot">
+        <button type="button" class="btn btn-danger-ghost" id="btn-delete">삭제</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn btn-ghost" data-close>취소</button>
+        <button type="submit" class="btn btn-primary" value="save">저장</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <datalist id="dl-owner"></datalist>
+  <datalist id="dl-campaign"></datalist>
+  <input type="file" id="file-input" hidden />
+  <div class="tooltip" id="tooltip" role="tooltip" hidden></div>
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
