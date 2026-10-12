@@ -699,31 +699,34 @@
       save(); render(); toast(`${rows.length}건을 가져왔습니다.`);
     }),
     'export-csv': () => download(`멀티채널_콘텐츠_운영현황_${toISO(today())}.csv`, toCSV(filtered({ ignorePeriod: true })), 'text/csv;charset=utf-8'),
-    'export-json': () => download(`content-backup_${toISO(today())}.json`, JSON.stringify({ version: 2, items, stats: stats.filter((r) => !r.example) }, null, 2), 'application/json'),
+    'export-json': () => download(`content-backup_${toISO(today())}.json`, JSON.stringify({ version: 3, items, blogStats: stats }, null, 2), 'application/json'),
     'import-json': () => pickFile('.json,application/json', async (f) => {
       const data = JSON.parse(await f.text());
       const arr = Array.isArray(data) ? data : data.items; // 예전 백업은 콘텐츠 배열만 있음
       if (!Array.isArray(arr)) throw new Error('올바른 백업 파일이 아닙니다.');
-      const st = Array.isArray(data.stats) ? data.stats : null;
+      const st = Array.isArray(data.blogStats) ? data.blogStats : null;
       if (!(await ask(`백업(콘텐츠 ${arr.length}건${st ? `, 블로그 성과 ${st.length}건` : ''})으로 현재 데이터를 교체할까요?`, '교체'))) return;
       items = arr.map(normalize); save();
       if (st) { stats = st.map(normStat); saveStats(); }
       render(); toast('백업을 불러왔습니다.');
     }),
     'import-stats': () => pickFile('.xlsx,.xls,.xlsm,.csv,.tsv,text/csv', async (f) => {
-      let { rows, sheet } = await readSheetFile(f, rowsToStats, /블로그|성과|통계/, '"조회수" 또는 "방문자수" 열');
-      if (!rows.length) throw new Error('가져올 행이 없습니다.');
+      let { rows, warnings, source } = await readStatsFile(f);
       if (rows.some((r) => !r.blog)) {
         const bs = blogs();
-        const pick = await askChoice(`「${sheet}」에 블로그 열이 없습니다. 어느 블로그의 기록인가요?`, bs[0], bs[1] || '취소');
-        if (!pick || (pick === 'cancel' && !bs[1])) return;
+        const pick = await askChoice(`${source}에 블로그 이름이 없습니다. 어느 블로그의 통계인가요?`, bs[0], bs[1]);
+        if (!pick) return;
         const name = pick === 'ok' ? bs[0] : bs[1];
         rows = rows.map((r) => ({ ...r, blog: r.blog || name }));
       }
+      const ms = uniq(rows.map((r) => r.month)).sort();
+      const ok = await ask(`${source}에서 ${blogs().concat(rows.map((r) => r.blog)).filter((b, i, arr) => arr.indexOf(b) === i && rows.some((r) => r.blog === b)).join('·')} ${ms.length}개월(${ymLabel(ms[0], true)} ~ ${ymLabel(ms[ms.length - 1], true)}) 통계를 읽었습니다. 같은 블로그·같은 월 기록은 새 값으로 바뀝니다.`, '가져오기');
+      if (!ok) return;
       upsertStats(rows);
-      toast(`블로그 성과 ${rows.length}건을 가져왔습니다.`);
+      statsUi.month = ms[ms.length - 1];
+      if (warnings.length) await ask('확인이 필요한 값이 있어 이전 탭 값을 사용했습니다.\n' + warnings.join('\n'), '확인', null);
+      toast(`블로그 통계 ${rows.length}건을 가져왔습니다.`);
     }),
-    'clear-example': () => { stats = stats.filter((r) => !r.example); saveStats(); render(); toast('예시 숫자를 지웠습니다.'); },
     'load-seed': async () => {
       if (!(await ask('지금 데이터를 지우고 처음 시트 데이터로 되돌릴까요?', '되돌리기'))) return;
       items = seed(); save(); render(); toast('처음 데이터로 되돌렸습니다.');
@@ -734,86 +737,52 @@
     },
   };
 
-  // ---------- 블로그 성과 (커넥트 · 인스피언) ----------
+  // ---------- 블로그 성과 (커넥트 · 인스피언, 월별) ----------
+  // 「블로그 통계(26년 N월)」 리포트 탭과 같은 구조: 블로그 × 월 = 조회수·순방문자수·체류시간·포스팅수 + 조회수 TOP5
   const BLOGS_DEFAULT = ['커넥트', '인스피언'];
-  const STATS_KEY = STORAGE_KEY + ':blog';
-  const METRIC_LABEL = { views: '조회수', visitors: '방문자수', neighbors: '이웃 수' };
-  const statsUi = { period: 'month', metric: 'views', editingId: null };
+  const STATS_KEY = STORAGE_KEY + ':blog-monthly';
+  const METRIC_LABEL = { views: '조회수', visitors: '순방문자수', dwell: '체류시간', posts: '포스팅수' };
+  const statsUi = { metric: 'views', range: 12, month: '', editingId: null };
 
   const numOrNull = (v) => { const t = String(v ?? '').replace(/[,\s]/g, ''); return t === '' || isNaN(+t) ? null : Math.max(0, +t); };
+  // "23.05.", 25.05(숫자), "2026-09", "2026년 9월" → "2026-09"
+  function parseYM(v) {
+    let y, m;
+    if (typeof v === 'number') { y = Math.floor(v); m = Math.round((v - y) * 100); }
+    else {
+      const t = String(v ?? '').trim();
+      const a = t.match(/^(\d{2,4})\s*[.\-/년]\s*(\d{1,2})\s*[.월]?\s*(?:[.\-/]\s*\d{1,2}\.?)?$/);
+      if (!a) return '';
+      y = +a[1]; m = +a[2];
+    }
+    if (y < 100) y += 2000;
+    return m >= 1 && m <= 12 ? `${y}-${String(m).padStart(2, '0')}` : '';
+  }
+  const blogName = (s) => { s = String(s || '').trim(); return /커넥트/.test(s) ? '커넥트' : /인스피언/.test(s) ? '인스피언' : s.replace(/\s*네이버\s*블로그\s*/, '').trim(); };
+  const cleanTitle = (t) => String(t || '').split(/\s+/).join(' ').trim();
   function normStat(r) {
     return {
-      id: r.id || uid(), blog: String(r.blog || '').trim(), date: normDate(r.date),
-      views: numOrNull(r.views), visitors: numOrNull(r.visitors), neighbors: numOrNull(r.neighbors),
-      memo: String(r.memo || ''), example: !!r.example,
+      id: r.id || uid(), blog: blogName(r.blog), month: parseYM(r.month || r.date),
+      views: numOrNull(r.views), visitors: numOrNull(r.visitors), dwell: numOrNull(r.dwell), posts: numOrNull(r.posts),
+      top: (Array.isArray(r.top) ? r.top : String(r.top || '').split('\n')).map(cleanTitle).filter(Boolean).slice(0, 5),
+      memo: String(r.memo || ''),
     };
   }
+  function seedStats() { return (window.SEED_STATS || []).map(normStat); }
   function loadStats() {
     try { const raw = localStorage.getItem(STATS_KEY); if (raw) return JSON.parse(raw).map(normStat); } catch (e) { /* 무시 */ }
-    return exampleStats();
+    return seedStats();
   }
   function saveStats() { try { localStorage.setItem(STATS_KEY, JSON.stringify(stats)); } catch (e) { toast('브라우저 저장에 실패했습니다.'); } }
   let stats = loadStats();
 
-  // 실제 기록이 없을 때 화면을 보여 주기 위한 예시 숫자 (주간 기록, example 표시)
-  function exampleStats() {
-    let seedN = 7;
-    const rnd = () => { seedN = (seedN * 16807) % 2147483647; return seedN / 2147483647; };
-    const t = today(), mon = addDays(t, -((t.getDay() + 6) % 7) - 7);
-    const out = [];
-    BLOGS_DEFAULT.forEach((blog, b) => {
-      let nb = b ? 640 : 1180;
-      for (let k = 39; k >= 0; k--) {
-        const d = addDays(mon, -7 * k);
-        const base = (b ? 1050 : 1750) * (1 + (39 - k) * 0.012) * (0.85 + rnd() * 0.3);
-        const views = Math.round(base), visitors = Math.round(views * (0.58 + rnd() * 0.08));
-        nb += Math.round(4 + rnd() * 14);
-        out.push(normStat({ blog, date: toISO(d), views, visitors, neighbors: nb, example: true }));
-      }
-    });
-    return out;
-  }
   function blogs() { return uniq([...BLOGS_DEFAULT, ...stats.map((r) => r.blog)]).sort((a, b) => ((BLOGS_DEFAULT.indexOf(a) + 1 || 99) - (BLOGS_DEFAULT.indexOf(b) + 1 || 99))); }
   const blogColor = (b) => `var(--s${(blogs().indexOf(b) % 8) + 1})`;
+  const ymAdd = (key, n) => { const [y, m] = key.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
+  const ymLabel = (key, long = false) => { const [y, m] = key.split('-').map(Number); return long ? `${y}년 ${m}월` : `${String(y).slice(2)}.${String(m).padStart(2, '0')}`; };
+  const statMap = () => { const o = {}; stats.forEach((r) => { (o[r.blog] ||= {})[r.month] = r; }); return o; };
+  const months = () => uniq(stats.map((r) => r.month)).sort();
 
-  function periodKey(dateStr, unit) {
-    const d = parseDate(dateStr);
-    if (!d) return null;
-    if (unit === 'month') return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    return toISO(addDays(d, -((d.getDay() + 6) % 7))); // 그 주 월요일
-  }
-  function periodLabel(key, unit, long = false) {
-    const [y, m, d] = key.split('-').map(Number);
-    if (unit === 'month') return long ? `${y}년 ${m}월` : `${String(y).slice(2)}.${String(m).padStart(2, '0')}`;
-    const end = addDays(new Date(y, m - 1, d), 6);
-    return long ? `${y}년 ${m}/${d} ~ ${end.getMonth() + 1}/${end.getDate()} 주` : `${m}/${d}`;
-  }
-  function prevKey(key, unit) {
-    const [y, m, d] = key.split('-').map(Number);
-    return unit === 'month' ? periodKey(toISO(new Date(y, m - 2, 1)), unit) : toISO(addDays(new Date(y, m - 1, d), -7));
-  }
-  function periodsList(unit, n) {
-    const last = stats.reduce((a, r) => (r.date > a ? r.date : a), '') || toISO(today());
-    const keys = [periodKey(last, unit)];
-    while (keys.length < n) keys.unshift(prevKey(keys[0], unit));
-    return keys;
-  }
-  // 블로그별 기간 집계: 조회수·방문자수는 합계, 이웃 수는 기간 안 마지막 기록 값
-  function aggregate(unit) {
-    const out = {};
-    [...stats].sort((a, b) => a.date.localeCompare(b.date)).forEach((r) => {
-      const k = periodKey(r.date, unit);
-      if (!k || !r.blog) return;
-      const a = ((out[r.blog] ||= {})[k] ||= { views: null, visitors: null, neighbors: null, n: 0 });
-      if (r.views != null) a.views = (a.views || 0) + r.views;
-      if (r.visitors != null) a.visitors = (a.visitors || 0) + r.visitors;
-      if (r.neighbors != null) a.neighbors = r.neighbors;
-      a.n++;
-    });
-    return out;
-  }
-  // 오늘이 속한 주/월은 아직 끝나지 않은 기간이라 증감률 비교에서 뺀다.
-  const isCurrent = (key, unit) => key === periodKey(toISO(today()), unit);
   const growth = (cur, prev) => (cur == null || prev == null || prev === 0 ? null : (cur - prev) / prev);
   function deltaHtml(g, onColor = false) {
     const c = onColor ? ' on-color' : '';
@@ -822,118 +791,121 @@
     if (Math.abs(g) < 0.0005) return `<span class="delta flat${c}">0%</span>`;
     return g > 0 ? `<span class="delta up${c}">▲ ${txt}%</span>` : `<span class="delta down${c}">▼ ${txt}%</span>`;
   }
-  // 이웃 수는 증감률보다 순증 수가 읽기 쉽다
-  const diffHtml = (cur, prev, onColor = false) => (cur == null || prev == null ? `<span class="delta flat${onColor ? ' on-color' : ''}">–</span>`
-    : `<span class="delta ${cur > prev ? 'up' : cur < prev ? 'down' : 'flat'}${onColor ? ' on-color' : ''}">${cur > prev ? '+' : ''}${fmt(cur - prev)}</span>`);
+  const diffHtml = (cur, prev, digits = 0, onColor = false) => {
+    const c = onColor ? ' on-color' : '';
+    if (cur == null || prev == null) return `<span class="delta flat${c}">–</span>`;
+    const d = cur - prev, t = Math.abs(d).toFixed(digits);
+    return `<span class="delta ${d > 0 ? 'up' : d < 0 ? 'down' : 'flat'}${c}">${d > 0 ? '+' : d < 0 ? '−' : '±'}${t}</span>`;
+  };
+  const fmtDwell = (v) => (v == null ? '–' : (+v).toFixed(2));
 
   function renderBlog() {
-    const unit = statsUi.period, metric = statsUi.metric;
-    $('#stats-example').hidden = !stats.some((r) => r.example);
-    $$('#stats-period button').forEach((b) => b.classList.toggle('is-on', b.dataset.period === unit));
-    $$('#stats-metric button').forEach((b) => b.classList.toggle('is-on', b.dataset.metric === metric));
+    const map = statMap(), bs = blogs().filter((b) => map[b]), all = months();
+    $$('#stats-metric button').forEach((b) => b.classList.toggle('is-on', b.dataset.metric === statsUi.metric));
+    $$('#stats-range button').forEach((b) => b.classList.toggle('is-on', +b.dataset.range === statsUi.range));
     $('#dl-blog').innerHTML = blogs().map((b) => `<option value="${esc(b)}">`).join('');
-    const agg = aggregate(unit), bs = blogs();
-    const keys = periodsList(unit, unit === 'month' ? 12 : 16);
-    const unitWord = unit === 'month' ? '전월' : '전주';
+    if (!statsUi.month || !all.includes(statsUi.month)) statsUi.month = all[all.length - 1] || '';
+    $('#stats-month').innerHTML = [...all].reverse().map((m) => `<option value="${m}">${ymLabel(m, true)} 기준</option>`).join('');
+    $('#stats-month').value = statsUi.month;
+    const k = statsUi.month;
 
     if (!stats.length) {
-      $('#blog-cards').innerHTML = `<div class="card empty-card span-all">
-        <b>아직 기록이 없습니다.</b>
-        <p>네이버 블로그 통계에서 커넥트·인스피언의 조회수와 방문자수를 옮겨 적으세요. 일·주·월 단위 어느 것이든 됩니다.</p>
-        <button class="btn btn-primary" data-add-stat>+ 첫 기록 입력</button></div>`;
-    } else {
-      $('#blog-cards').innerHTML = bs.map((b, i) => {
-        const a = agg[b] || {};
-        const k = [...keys].reverse().find((x) => a[x] && !isCurrent(x, unit)) || [...keys].reverse().find((x) => a[x]) || keys[keys.length - 1];
-        const cur0 = keys.find((x) => isCurrent(x, unit) && a[x]);
-        const cur = a[k] || {}, prev = a[prevKey(k, unit)] || {};
-        const cls = i === 0 ? 'hero-green' : i === 1 ? 'hero-blue' : 'hero-plain';
-        const on = i < 2;
-        return `<div class="hero-card ${cls} blog-card">
-          <div class="hero-label">${esc(b)} 블로그 <span class="hero-hint">${esc(periodLabel(k, unit, true))}${cur0 && cur0 !== k ? ` · ${unit === 'month' ? '이번 달' : '이번 주'}은 진행 중 (현재 ${fmt(a[cur0].views)})` : ''}</span></div>
-          <div class="blog-main"><span>조회수</span><b>${fmt(cur.views)}</b>${deltaHtml(growth(cur.views, prev.views), on)}<em>${unitWord} ${fmt(prev.views)}</em></div>
-          <div class="blog-subs">
-            <div><span>방문자수</span><b>${fmt(cur.visitors)}</b>${deltaHtml(growth(cur.visitors, prev.visitors), on)}</div>
-            <div><span>방문자당 조회</span><b>${cur.views != null && cur.visitors ? (cur.views / cur.visitors).toFixed(2) : '–'}</b></div>
-            <div><span>이웃 수</span><b>${fmt(cur.neighbors)}</b>${diffHtml(cur.neighbors, prev.neighbors, on)}</div>
-          </div>
-        </div>`;
-      }).join('');
+      $('#blog-cards').innerHTML = `<div class="card empty-card span-all"><b>아직 블로그 통계가 없습니다.</b>
+        <p>「블로그 통계」 엑셀 파일을 왼쪽 메뉴의 ‘블로그 통계 가져오기’로 올리거나 월 통계를 직접 입력하세요.</p>
+        <button class="btn btn-primary" data-add-stat>+ 월 통계 입력</button></div>`;
+      ['#chart-trend', '#tops', '#period-table', '#trend-legend'].forEach((s) => { $(s).innerHTML = ''; });
+      return;
     }
 
+    // 블로그별 카드: 선택한 월, 전월·전년 동월 대비
+    $('#blog-cards').innerHTML = bs.map((b, i) => {
+      const c = map[b][k] || {}, p = map[b][ymAdd(k, -1)] || {}, ly = map[b][ymAdd(k, -12)] || {};
+      const cls = i === 0 ? 'hero-green' : i === 1 ? 'hero-blue' : 'hero-plain', on = i < 2;
+      return `<div class="hero-card ${cls} blog-card">
+        <div class="hero-label">${esc(b)} 네이버 블로그 <span class="hero-hint">${ymLabel(k, true)}</span></div>
+        <div class="blog-main"><span>조회수</span><b>${fmt(c.views)}</b>
+          <span class="cmp">전월 ${deltaHtml(growth(c.views, p.views), on)} <em>${fmt(p.views)}</em></span>
+          <span class="cmp">전년 동월 ${deltaHtml(growth(c.views, ly.views), on)} <em>${fmt(ly.views)}</em></span></div>
+        <div class="blog-subs">
+          <div><span>순방문자수</span><b>${fmt(c.visitors)}</b>${deltaHtml(growth(c.visitors, p.visitors), on)}</div>
+          <div><span>체류시간</span><b>${fmtDwell(c.dwell)}</b>${diffHtml(c.dwell, p.dwell, 2, on)}</div>
+          <div><span>포스팅수</span><b>${fmt(c.posts)}</b>${diffHtml(c.posts, p.posts, 0, on)}</div>
+          <div><span>포스팅당 조회</span><b>${c.views != null && c.posts ? fmt(c.views / c.posts) : '–'}</b></div>
+        </div>
+        ${c.memo ? `<div class="blog-memo">※ ${esc(c.memo)}</div>` : ''}
+      </div>`;
+    }).join('');
+
     // 추이 차트
+    const metric = statsUi.metric;
+    const endIdx = all.indexOf(k);
+    const keys = (statsUi.range ? all.slice(Math.max(0, endIdx - statsUi.range + 1), endIdx + 1) : all.slice(0, endIdx + 1));
     $('#trend-title').textContent = `${METRIC_LABEL[metric]} 추이`;
-    $('#trend-sub').textContent = `${unit === 'month' ? '월간 · 최근 12개월' : '주간 · 최근 16주'}${metric === 'neighbors' ? ' · 기간 마지막 값' : ' · 기간 합계'}`;
-    const series = bs.filter((b) => agg[b]).map((b) => ({ name: b, color: blogColor(b), values: keys.map((k) => agg[b][k]?.[metric] ?? null) }));
+    $('#trend-sub').textContent = `${ymLabel(keys[0], true)} ~ ${ymLabel(keys[keys.length - 1], true)} · 월별`;
+    const series = bs.map((b) => ({ name: b, color: blogColor(b), values: keys.map((m) => map[b][m]?.[metric] ?? null) }));
     $('#trend-legend').innerHTML = series.map((sr) => `<span class="lg"><i style="background:${sr.color}"></i>${esc(sr.name)}</span>`).join('');
-    const partial = isCurrent(keys[keys.length - 1], unit) ? keys.length - 1 : -1;
-    lineMulti($('#chart-trend'), keys.map((k) => periodLabel(k, unit)), keys.map((k, i) => periodLabel(k, unit, true) + (i === partial ? ' (진행 중)' : '')), series, metric, partial);
+    lineMulti($('#chart-trend'), keys.map((m) => ymLabel(m)), keys.map((m) => ymLabel(m, true)), series, metric);
 
-    // 기간별 표 (최신 기간이 위)
-    const showBs = bs.filter((b) => agg[b]);
-    const total = (k, m) => { const v = showBs.map((b) => agg[b][k]?.[m]); return v.every((x) => x == null) ? null : v.reduce((s2, x) => s2 + (x || 0), 0); };
-    $('#period-table').innerHTML = showBs.length ? `<thead>
-        <tr><th rowspan="2">기간</th>${showBs.map((b) => `<th colspan="4" class="grp"><span class="chan" style="--c:${blogColor(b)}">${esc(b)}</span></th>`).join('')}${showBs.length > 1 ? '<th colspan="2" class="grp">합계</th>' : ''}</tr>
-        <tr>${showBs.map(() => '<th class="num">조회수</th><th class="num">증감</th><th class="num">방문자수</th><th class="num">증감</th>').join('')}${showBs.length > 1 ? '<th class="num">조회수</th><th class="num">증감</th>' : ''}</tr>
-      </thead><tbody>${[...keys].reverse().filter((k) => showBs.some((b) => agg[b][k])).map((k) => {
-        const pk = prevKey(k, unit), live = isCurrent(k, unit);
-        const d = (c, p) => (live ? '<span class="delta flat">진행 중</span>' : deltaHtml(growth(c, p)));
-        return `<tr class="${live ? 'is-live' : ''}"><td class="nowrap">${esc(periodLabel(k, unit, true))}</td>${showBs.map((b) => {
-          const c = agg[b][k] || {}, p = agg[b][pk] || {};
-          return `<td class="num">${fmt(c.views)}</td><td class="num">${d(c.views, p.views)}</td><td class="num">${fmt(c.visitors)}</td><td class="num">${d(c.visitors, p.visitors)}</td>`;
-        }).join('')}${showBs.length > 1 ? `<td class="num"><b>${fmt(total(k, 'views'))}</b></td><td class="num">${d(total(k, 'views'), total(pk, 'views'))}</td>` : ''}</tr>`;
-      }).join('')}</tbody>` : '<tbody><tr><td class="empty">기록을 입력하면 기간별 증감률이 계산됩니다.</td></tr></tbody>';
+    // TOP5: 선택한 월, 연속 진입 개월 수 표시
+    $('#top-month').textContent = ymLabel(k, true);
+    const norm = (t) => t.replace(/[\s\p{P}\p{S}]/gu, '').toLowerCase();
+    $('#tops').innerHTML = bs.map((b) => {
+      const list = map[b][k]?.top || [];
+      const streak = (t) => { let n = 0, m = k; while (map[b][m]?.top?.some((x) => norm(x) === norm(t))) { n++; m = ymAdd(m, -1); } return n; };
+      return `<div class="top-col"><h3><span class="chan" style="--c:${blogColor(b)}">${esc(b)}</span></h3>
+        ${list.length ? `<ol>${list.map((t) => { const n = streak(t); return `<li><span>${esc(t)}</span>${n > 1 ? `<span class="streak">${n}개월 연속</span>` : '<span class="streak new">신규</span>'}</li>`; }).join('')}</ol>`
+          : '<p class="empty">이 달의 TOP5가 입력되지 않았습니다.</p>'}
+      </div>`;
+    }).join('');
 
-    // 입력한 기록
-    const rows = [...stats].sort((a, b) => b.date.localeCompare(a.date) || a.blog.localeCompare(b.blog, 'ko'));
-    $('#stats-count').textContent = `${rows.length}건${stats.some((r) => r.example) ? ' (예시 포함)' : ''}`;
-    $('#stats-table').innerHTML = `<thead><tr><th>기준일</th><th>블로그</th><th class="num">조회수</th><th class="num">방문자수</th><th class="num">이웃 수</th><th>메모</th></tr></thead>
-      <tbody>${rows.slice(0, statsUi.showAll ? rows.length : 20).map((r) => `<tr data-stat="${r.id}" class="clickable-row">
-        <td class="nowrap">${r.date}</td><td><span class="chan" style="--c:${blogColor(r.blog)}">${esc(r.blog)}</span>${r.example ? ' <span class="dup">예시</span>' : ''}</td>
-        <td class="num">${fmt(r.views)}</td><td class="num">${fmt(r.visitors)}</td><td class="num">${fmt(r.neighbors)}</td><td class="notes-cell">${esc(r.memo)}</td>
-      </tr>`).join('')}${rows.length > 20 ? `<tr><td colspan="6" class="more-row"><button class="btn btn-ghost btn-sm" data-toggle-all>${statsUi.showAll ? '최근 20건만 보기' : `전체 ${rows.length}건 보기`}</button></td></tr>` : ''}</tbody>`;
+    // 월별 표 (최신 월이 위)
+    const rows = [...all].reverse().slice(0, statsUi.allRows ? undefined : 13);
+    const total = (m, f) => { const v = bs.map((b) => map[b][m]?.[f]); return v.every((x) => x == null) ? null : v.reduce((a, x) => a + (x || 0), 0); };
+    $('#period-table').innerHTML = `<thead>
+        <tr><th rowspan="2">월</th>${bs.map((b) => `<th colspan="5" class="grp"><span class="chan" style="--c:${blogColor(b)}">${esc(b)}</span></th>`).join('')}${bs.length > 1 ? '<th colspan="3" class="grp">합계 조회수</th>' : ''}</tr>
+        <tr>${bs.map(() => '<th class="num">조회수</th><th class="num">전월</th><th class="num">전년</th><th class="num">순방문자</th><th class="num">포스팅</th>').join('')}${bs.length > 1 ? '<th class="num">조회수</th><th class="num">전월</th><th class="num">전년</th>' : ''}</tr>
+      </thead><tbody>${rows.map((m) => `<tr class="${m === k ? 'is-sel' : ''}">
+        <td class="nowrap">${ymLabel(m, true)}</td>${bs.map((b) => {
+          const c = map[b][m];
+          if (!c) return '<td class="num muted" colspan="5">–</td>';
+          return `<td class="num clickable-cell" data-stat="${c.id}" title="${esc(c.memo || '눌러서 수정')}">${fmt(c.views)}${c.memo ? '<sup>※</sup>' : ''}</td>
+            <td class="num">${deltaHtml(growth(c.views, map[b][ymAdd(m, -1)]?.views))}</td><td class="num">${deltaHtml(growth(c.views, map[b][ymAdd(m, -12)]?.views))}</td>
+            <td class="num">${fmt(c.visitors)}</td><td class="num">${fmt(c.posts)}</td>`;
+        }).join('')}${bs.length > 1 ? `<td class="num"><b>${fmt(total(m, 'views'))}</b></td><td class="num">${deltaHtml(growth(total(m, 'views'), total(ymAdd(m, -1), 'views')))}</td><td class="num">${deltaHtml(growth(total(m, 'views'), total(ymAdd(m, -12), 'views')))}</td>` : ''}
+      </tr>`).join('')}${all.length > 13 ? `<tr><td colspan="99" class="more-row"><button class="btn btn-ghost btn-sm" data-toggle-rows>${statsUi.allRows ? '최근 13개월만 보기' : `전체 ${all.length}개월 보기`}</button></td></tr>` : ''}</tbody>`;
   }
 
-  // 여러 블로그를 한 축에 그리는 선 차트 (조회수끼리, 방문자수끼리처럼 같은 단위만)
-  function lineMulti(el, labels, fullLabels, series, metric, partial = -1) {
+  // 여러 블로그를 한 축에 그리는 선 차트 (같은 지표끼리만)
+  function lineMulti(el, labels, fullLabels, series, metric) {
     if (!series.length || series.every((sr) => sr.values.every((v) => v == null))) { el.innerHTML = '<div class="chart-empty">표시할 기록이 없습니다.</div>'; return; }
     const W = 1080, H = 300, padL = 56, padR = 120, padT = 16, padB = 30;
     const iw = W - padL - padR, ih = H - padT - padB, n = labels.length;
     const vals = series.flatMap((sr) => sr.values).filter((v) => v != null);
-    const lo = metric === 'neighbors' ? Math.min(...vals) * 0.9 : 0;
-    const max = metric === 'neighbors' ? Math.max(...vals) * 1.05 : niceMax(Math.max(...vals));
+    const max = niceMax(Math.max(...vals));
     const x = (i) => padL + (n === 1 ? iw / 2 : (iw * i) / (n - 1));
-    const y = (v) => padT + ih - (ih * (v - lo)) / (max - lo || 1);
+    const y = (v) => padT + ih - (ih * v) / max;
+    const tick = metric === 'dwell' ? (v) => (+v).toFixed(1) : fmtShort;
     let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="블로그별 ${METRIC_LABEL[metric]} 추이">`;
     for (let k = 0; k <= 4; k++) {
-      const v = lo + ((max - lo) / 4) * k;
-      s += `<line class="${k ? 'grid-line' : 'baseline'}" x1="${padL}" x2="${W - padR}" y1="${y(v)}" y2="${y(v)}"/><text class="tick" x="${padL - 8}" y="${y(v) + 4}" text-anchor="end">${fmtShort(v)}</text>`;
+      const v = (max / 4) * k;
+      s += `<line class="${k ? 'grid-line' : 'baseline'}" x1="${padL}" x2="${W - padR}" y1="${y(v)}" y2="${y(v)}"/><text class="tick" x="${padL - 8}" y="${y(v) + 4}" text-anchor="end">${tick(v)}</text>`;
     }
-    const step = Math.ceil(n / 8);
-    labels.forEach((l, i) => { if (i % step === (n - 1) % step) s += `<text class="tick" x="${x(i)}" y="${H - 8}" text-anchor="middle">${esc(l)}${i === partial ? '*' : ''}</text>`; });
+    const step = Math.ceil(n / 12);
+    labels.forEach((l, i) => { if (i % step === (n - 1) % step) s += `<text class="tick" x="${x(i)}" y="${H - 8}" text-anchor="middle">${esc(l)}</text>`; });
     s += `<line class="crosshair" x1="0" x2="0" y1="${padT}" y2="${padT + ih}" visibility="hidden"/>`;
     const ends = [];
     series.forEach((sr) => {
       let d = '', pen = false;
-      sr.values.forEach((v, i) => { if (v == null || i === partial) { pen = false; return; } d += `${pen ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)} `; pen = true; });
+      sr.values.forEach((v, i) => { if (v == null) { pen = false; return; } d += `${pen ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)} `; pen = true; });
       s += `<path d="${d}" fill="none" stroke="${sr.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
-      // 진행 중인 기간은 점선 + 속 빈 점
-      if (partial > 0 && sr.values[partial] != null && sr.values[partial - 1] != null) {
-        s += `<path d="M${x(partial - 1)} ${y(sr.values[partial - 1])} L${x(partial)} ${y(sr.values[partial])}" fill="none" stroke="${sr.color}" stroke-width="2" stroke-dasharray="4 4"/>`;
-      }
-      sr.values.forEach((v, i) => {
-        if (v != null) s += i === partial
-          ? `<circle cx="${x(i)}" cy="${y(v)}" r="4" fill="var(--surface)" stroke="${sr.color}" stroke-width="2"/>`
-          : `<circle cx="${x(i)}" cy="${y(v)}" r="3.5" fill="${sr.color}" stroke="var(--surface)" stroke-width="2"/>`;
-      });
-      const li = sr.values.map((v, i) => (v == null || i === partial ? -1 : i)).filter((i) => i >= 0).pop();
+      if (n <= 36) sr.values.forEach((v, i) => { if (v != null) s += `<circle cx="${x(i)}" cy="${y(v)}" r="3.5" fill="${sr.color}" stroke="var(--surface)" stroke-width="2"/>`; });
+      const li = sr.values.map((v, i) => (v == null ? -1 : i)).filter((i) => i >= 0).pop();
       if (li != null) ends.push({ sr, i: li, v: sr.values[li], y: y(sr.values[li]) });
     });
-    // 끝점 라벨: 겹치지 않게 최소 간격 확보
-    ends.sort((a, b) => a.y - b.y).forEach((e, k, arr) => { e.ly = k ? Math.max(e.y, arr[k - 1].ly + 30) : e.y; });
+    ends.sort((a, b) => a.y - b.y).forEach((e, k, arr) => { e.ly = k ? Math.max(e.y, arr[k - 1].ly + 34) : e.y; });
     ends.forEach((e) => {
       s += `<circle cx="${x(e.i)}" cy="${e.y}" r="5" fill="${e.sr.color}" stroke="var(--surface)" stroke-width="2"/>`;
-      s += `<text class="label" x="${W - padR + 10}" y="${e.ly - 2}">${esc(e.sr.name)}</text><text class="value" x="${W - padR + 10}" y="${e.ly + 14}">${fmt(e.v)}</text>`;
+      s += `<text class="label" x="${W - padR + 10}" y="${e.ly - 2}">${esc(e.sr.name)}</text><text class="value" x="${W - padR + 10}" y="${e.ly + 15}">${metric === 'dwell' ? fmtDwell(e.v) : fmt(e.v)}</text>`;
     });
     labels.forEach((l, i) => {
       const w = n === 1 ? iw : iw / (n - 1);
@@ -947,8 +919,8 @@
       r.addEventListener('mousemove', (e) => {
         xh.setAttribute('x1', x(i)); xh.setAttribute('x2', x(i)); xh.setAttribute('visibility', 'visible');
         showTip(e, fullLabels[i], series.map((sr) => {
-          const g = i > 0 ? growth(sr.values[i], sr.values[i - 1]) : null;
-          return [sr.name, sr.values[i] == null ? '기록 없음' : `${fmt(sr.values[i])}${g == null ? '' : `  (${g >= 0 ? '▲' : '▼'}${Math.abs(g * 100).toFixed(1)}%)`}`];
+          const v = sr.values[i], g = i > 0 ? growth(v, sr.values[i - 1]) : null;
+          return [sr.name, v == null ? '기록 없음' : `${metric === 'dwell' ? fmtDwell(v) : fmt(v)}${g == null ? '' : `  (전월 ${g >= 0 ? '▲' : '▼'}${Math.abs(g * 100).toFixed(1)}%)`}`];
         }));
       });
       r.addEventListener('mouseleave', () => { xh.setAttribute('visibility', 'hidden'); hideTip(); });
@@ -956,83 +928,129 @@
   }
   const fmtShort = (n) => (n >= 1e4 ? (n / 1e4).toFixed(n >= 1e5 ? 0 : 1).replace(/\.0$/, '') + '만' : fmt(n));
 
+  // 「블로그 통계(26년 N월)」 리포트 탭 읽기: "OOO 네이버 블로그" 제목 → 날짜/조회수/순방문자수/체류시간/포스팅수 표 → 조회수 순위 TOP5
+  function parseReportSheet(name, rows) {
+    const nm = name.match(/(\d{2,4})\s*년\s*(\d{1,2})\s*월/);
+    let blog = null, lastM = '';
+    const recs = {}, tops = {};
+    const cellAt = (r) => { const i = r.findIndex((c) => c !== '' && c != null); return i < 0 ? [null, -1] : [r[i], i]; };
+    rows.forEach((r) => {
+      const [b, i] = cellAt(r);
+      if (b == null) return;
+      if (typeof b === 'string' && /블로그/.test(b) && !parseYM(b)) { blog = blogName(b); return; }
+      if (!blog) return;
+      const m = parseYM(b);
+      if (m && typeof r[i + 1] === 'number') {
+        recs[blog + '|' + m] = { blog, month: m, views: r[i + 1], visitors: r[i + 2], dwell: r[i + 3], posts: r[i + 4] };
+        if (m > lastM) lastM = m;
+        return;
+      }
+      if (typeof b === 'number' && b >= 1 && b <= 5 && typeof r[i + 1] === 'string' && r[i + 1].trim()) (tops[blog] ||= []).push([b, cleanTitle(r[i + 1])]);
+    });
+    if (!Object.keys(recs).length) return null;
+    const sm = nm ? parseYM(`${nm[1]}.${nm[2]}`) : lastM;
+    return { month: sm, recs, tops };
+  }
+  // 여러 리포트 탭 합치기: 최신 탭 값이 우선. 단, 최신 값이 다른 블로그의 같은 달 값과 똑같으면(복사 실수로 보임) 이전 탭 값을 쓰고 알린다.
+  function mergeReports(reports) {
+    reports.sort((a, b) => a.month.localeCompare(b.month));
+    const fin = {}, hist = {}, notes = {};
+    reports.forEach((rp) => Object.entries(rp.recs).forEach(([key, v]) => { fin[key] = v; (hist[key] ||= []).push([rp.month, v]); }));
+    Object.entries(fin).forEach(([key, v]) => {
+      const dup = Object.values(fin).find((w) => w.blog !== v.blog && w.month === v.month && w.views === v.views && w.visitors === v.visitors);
+      if (!dup) return;
+      const alt = hist[key].filter(([, h]) => h.views !== v.views).pop();
+      if (!alt) return;
+      fin[key] = alt[1];
+      notes[key] = `최신 탭 값(${v.views}/${v.visitors})이 ${dup.blog}와 같아 ${ymLabel(alt[0], true).slice(2)} 탭 값을 사용`;
+    });
+    const out = Object.entries(fin).map(([key, v]) => normStat({ ...v, memo: notes[key] || '' }));
+    reports.forEach((rp) => Object.entries(rp.tops).forEach(([b, t]) => {
+      const r = out.find((o) => o.blog === b && o.month === rp.month);
+      if (r) r.top = t.sort((x, y) => x[0] - y[0]).map((x) => x[1]);
+    }));
+    return { rows: out, warnings: Object.entries(notes).map(([k, n]) => `${k.replace('|', ' ')}: ${n}`) };
+  }
+  // 단순 표 형식(블로그, 월, 조회수, 순방문자수, 체류시간, 포스팅수, 메모)
   function rowsToStats(rows) {
     const clean = (h) => String(h ?? '').replace(/\s+/g, '').toLowerCase();
     const FIELDS = [
-      ['blog', ['블로그', '블로그명', '블로그이름']],
-      ['date', ['기준일', '날짜', '일자', 'date', '기간', '월', '주']],
-      ['views', ['조회수', '조회', 'pv', 'pageview', 'pageviews']],
-      ['visitors', ['방문자수', '방문자', '순방문자수', 'uv', 'visitors']],
-      ['neighbors', ['이웃수', '이웃', '구독자수', '구독자']],
-      ['memo', ['메모', '비고']],
+      ['blog', ['블로그', '블로그명']], ['month', ['월', '날짜', '기준월', '기준일', '일자', 'month', 'date']],
+      ['views', ['조회수', '조회']], ['visitors', ['순방문자수', '방문자수', '방문자']], ['dwell', ['체류시간', '평균체류시간']],
+      ['posts', ['포스팅수', '포스팅', '발행수']], ['memo', ['메모', '비고']],
     ];
-    const hIdx = rows.findIndex((r) => r.some((c) => ['조회수', '조회', '방문자수', '방문자', '순방문자수'].includes(clean(c))));
-    if (hIdx < 0) throw new Error('"조회수" 또는 "방문자수" 열을 찾을 수 없습니다.');
+    const hIdx = rows.findIndex((r) => r.some((c) => ['조회수', '순방문자수', '방문자수'].includes(clean(c))));
+    if (hIdx < 0) throw new Error('"조회수" 열을 찾을 수 없습니다.');
     const map = rows[hIdx].map((h) => (FIELDS.find(([, al]) => al.includes(clean(h))) || [null])[0]);
-    if (!map.includes('date')) throw new Error('"기준일"(날짜) 열을 찾을 수 없습니다.');
-    return rows.slice(hIdx + 1).map((r) => {
-      const o = {};
-      map.forEach((k, i) => { if (k && o[k] == null) o[k] = r[i]; });
-      return normStat(o);
-    }).filter((r) => r.date && (r.views != null || r.visitors != null || r.neighbors != null));
+    return rows.slice(hIdx + 1).map((r) => { const o = {}; map.forEach((k, i) => { if (k && o[k] == null) o[k] = r[i]; }); return normStat(o); })
+      .filter((r) => r.month && (r.views != null || r.visitors != null));
   }
-  // 같은 블로그·같은 기준일 기록은 새 값으로 덮어쓴다. 실제 기록이 들어오면 예시는 지운다.
+  async function readStatsFile(f) {
+    const sheets = await readSheets(f, /블로그\s*통계/);
+    const reports = sheets.map((sh) => parseReportSheet(sh.name, sh.rows)).filter(Boolean);
+    if (reports.length) return { ...mergeReports(reports), source: `${reports.length}개 탭` };
+    for (const sh of sheets) { try { const rows = rowsToStats(sh.rows); if (rows.length) return { rows, warnings: [], source: `「${sh.name}」` }; } catch (e) { /* 다음 탭 */ } }
+    throw new Error('블로그 통계 표(날짜·조회수·순방문자수…)를 찾을 수 없습니다.');
+  }
+  // 같은 블로그·같은 월 기록은 새 값으로 덮어쓴다. 새 값에 TOP5가 없으면 기존 TOP5는 유지.
   function upsertStats(newRows) {
-    const keyOf = (r) => r.blog + '|' + r.date;
+    const keyOf = (r) => r.blog + '|' + r.month;
+    const old = Object.fromEntries(stats.map((r) => [keyOf(r), r]));
+    newRows.forEach((r) => { const o = old[keyOf(r)]; if (o && !r.top.length) r.top = o.top; if (o) r.id = o.id; });
     const incoming = new Set(newRows.map(keyOf));
-    const hadExample = stats.some((r) => r.example);
-    stats = stats.filter((r) => !r.example && !incoming.has(keyOf(r))).concat(newRows);
+    stats = stats.filter((r) => !incoming.has(keyOf(r))).concat(newRows);
     saveStats(); render();
-    if (hadExample) setTimeout(() => toast('예시 숫자를 지우고 실제 기록으로 바꿨습니다.'), 2300);
   }
 
   const sdlg = $('#stat-editor'), sform = $('#stat-form');
-  function openStat(id) {
+  function openStat(id, preset = {}) {
     const r = id ? stats.find((x) => x.id === id) : null;
     statsUi.editingId = r ? r.id : null;
-    $('#stat-title').textContent = r ? '블로그 성과 수정' : '블로그 성과 기록';
+    $('#stat-title').textContent = r ? `${r.blog} ${ymLabel(r.month, true)} 통계 수정` : '블로그 월 통계 입력';
     $('#btn-delete-stat').hidden = !r;
     $('#dl-blog').innerHTML = blogs().map((b) => `<option value="${esc(b)}">`).join('');
-    const lastBlog = stats.filter((x) => !x.example).sort((a, b) => b.date.localeCompare(a.date))[0]?.blog;
-    const v = r || { blog: lastBlog || BLOGS_DEFAULT[0], date: toISO(statsUi.period === 'month' ? startOfMonth(today()) : addDays(today(), -((today().getDay() + 6) % 7))) };
-    ['blog', 'date', 'views', 'visitors', 'neighbors', 'memo'].forEach((k) => { sform[k].value = v[k] ?? ''; });
+    const last = months().pop();
+    const v = r || { blog: BLOGS_DEFAULT[0], month: last ? ymAdd(last, 1) : toISO(today()).slice(0, 7), ...preset };
+    ['blog', 'month', 'views', 'visitors', 'dwell', 'posts', 'memo'].forEach((k) => { sform[k].value = v[k] ?? ''; });
+    sform.top.value = (v.top || []).join('\n');
     sdlg.showModal();
-    setTimeout(() => sform.views.focus(), 30);
+    setTimeout(() => (r ? sform.views : sform.views).focus(), 30);
   }
   sform.addEventListener('submit', (e) => {
     e.preventDefault();
-    const r = normStat({ ...Object.fromEntries(new FormData(sform).entries()), id: statsUi.editingId || undefined });
-    if (!r.blog || !r.date) return;
-    if (r.views == null && r.visitors == null && r.neighbors == null) { sform.views.focus(); return toast('조회수, 방문자수, 이웃 수 중 하나는 입력하세요.'); }
+    const r = normStat({ ...Object.fromEntries(new FormData(sform).entries()) });
+    if (!r.blog || !r.month) return;
+    if (r.views == null && r.visitors == null) { sform.views.focus(); return toast('조회수나 순방문자수를 입력하세요.'); }
     if (statsUi.editingId) stats = stats.filter((x) => x.id !== statsUi.editingId);
+    if (!r.top.length) r.top = [];
     upsertStats([r]);
-    sdlg.close(); toast(`${r.blog} ${r.date} 기록을 저장했습니다.`);
+    statsUi.month = r.month;
+    sdlg.close(); render(); toast(`${r.blog} ${ymLabel(r.month, true)} 통계를 저장했습니다.`);
   });
   $('#btn-delete-stat').addEventListener('click', async () => {
-    if (!statsUi.editingId || !(await ask('이 기록을 삭제할까요?', '삭제'))) return;
+    if (!statsUi.editingId || !(await ask('이 달의 통계를 삭제할까요?', '삭제'))) return;
     stats = stats.filter((x) => x.id !== statsUi.editingId);
     saveStats(); sdlg.close(); render(); toast('삭제했습니다.');
   });
   $$('[data-close]', sdlg).forEach((b) => b.addEventListener('click', () => sdlg.close()));
   sdlg.addEventListener('click', (e) => { if (e.target === sdlg) sdlg.close(); });
   $('#btn-add-stat').addEventListener('click', () => openStat(null));
-  $('#stats-period').addEventListener('click', (e) => { const b = e.target.closest('[data-period]'); if (b) { statsUi.period = b.dataset.period; renderBlog(); } });
   $('#stats-metric').addEventListener('click', (e) => { const b = e.target.closest('[data-metric]'); if (b) { statsUi.metric = b.dataset.metric; renderBlog(); } });
+  $('#stats-range').addEventListener('click', (e) => { const b = e.target.closest('[data-range]'); if (b) { statsUi.range = +b.dataset.range; renderBlog(); } });
+  $('#stats-month').addEventListener('change', (e) => { statsUi.month = e.target.value; renderBlog(); });
   $('#view-blog').addEventListener('click', (e) => {
     if (e.target.closest('[data-add-stat]')) return openStat(null);
-    if (e.target.closest('[data-toggle-all]')) { statsUi.showAll = !statsUi.showAll; return renderBlog(); }
-    const tr = e.target.closest('[data-stat]');
-    if (tr) openStat(tr.dataset.stat);
+    if (e.target.closest('[data-toggle-rows]')) { statsUi.allRows = !statsUi.allRows; return renderBlog(); }
+    const c = e.target.closest('[data-stat]');
+    if (c) openStat(c.dataset.stat);
   });
-  $('#stats-example').addEventListener('click', (e) => { const a = e.target.closest('[data-action]'); if (a) actions[a.dataset.action](); });
 
-  // 대시보드 우측 패널용 요약: 블로그별 최근 월 조회수와 전월 대비
+  // 대시보드 우측 패널: 블로그별 최근 월 조회수와 전월 대비
   function renderSideBlog() {
-    const agg = aggregate('month'), keys = periodsList('month', 3);
-    const [pk, k] = isCurrent(keys[2], 'month') ? keys : keys.slice(1);
-    $('#side-blog-sub').textContent = stats.length ? `${periodLabel(k, 'month', true)} 조회수${stats.some((r) => r.example) ? ' · 예시' : ''}` : '';
-    $('#side-blog').innerHTML = stats.length ? blogs().filter((b) => agg[b]).map((b) => {
-      const c = agg[b][k] || {}, p = agg[b][pk] || {};
+    const map = statMap(), k = months().pop();
+    $('#side-blog-sub').textContent = k ? `${ymLabel(k, true)} 조회수` : '';
+    $('#side-blog').innerHTML = k ? blogs().filter((b) => map[b]).map((b) => {
+      const c = map[b][k] || {}, p = map[b][ymAdd(k, -1)] || {};
       return `<li data-goto="blog"><div class="camp-top"><span><span class="chan" style="--c:${blogColor(b)}">${esc(b)}</span></span><span><b class="nowrap">${fmt(c.views)}</b> ${deltaHtml(growth(c.views, p.views))}</span></div></li>`;
     }).join('') : '<li data-goto="blog" class="muted">아직 기록이 없습니다 · 블로그 성과에서 입력</li>';
   }

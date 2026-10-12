@@ -24,7 +24,7 @@
       <div class="nav-section">데이터 관리</div>
       <div class="nav-sub" id="menu-data">
         <button data-action="import-file">엑셀/CSV 가져오기</button>
-        <button data-action="import-stats">블로그 성과 가져오기</button>
+        <button data-action="import-stats">블로그 통계 가져오기</button>
         <button data-action="export-csv">CSV 내보내기</button>
         <button data-action="export-json">백업 저장 (JSON)</button>
         <button data-action="import-json">백업 불러오기</button>
@@ -169,19 +169,16 @@
       </section>
       <!-- 블로그 성과 -->
       <section class="view" id="view-blog">
-        <div class="example-banner" id="stats-example" hidden>
-          <span><b>예시 숫자입니다.</b> 실제 기록을 처음 저장하면 예시는 자동으로 지워집니다.</span>
-          <button class="btn btn-sm" data-action="clear-example">예시 지우기</button>
-        </div>
         <div class="blog-toolbar">
-          <div class="seg" id="stats-period" role="group" aria-label="기간 단위">
-            <button data-period="week">주간</button><button data-period="month" class="is-on">월간</button>
-          </div>
           <div class="seg" id="stats-metric" role="group" aria-label="지표">
-            <button data-metric="views" class="is-on">조회수</button><button data-metric="visitors">방문자수</button><button data-metric="neighbors">이웃 수</button>
+            <button data-metric="views" class="is-on">조회수</button><button data-metric="visitors">순방문자수</button><button data-metric="dwell">체류시간</button><button data-metric="posts">포스팅수</button>
+          </div>
+          <div class="seg" id="stats-range" role="group" aria-label="기간">
+            <button data-range="12" class="is-on">12개월</button><button data-range="24">24개월</button><button data-range="0">전체</button>
           </div>
           <span class="spacer"></span>
-          <button class="btn btn-primary" id="btn-add-stat">+ 성과 기록</button>
+          <select id="stats-month" class="select-month" aria-label="기준 월"></select>
+          <button class="btn btn-primary" id="btn-add-stat">+ 월 통계 입력</button>
         </div>
         <div class="hero" id="blog-cards"></div>
         <article class="card grid-1">
@@ -194,17 +191,17 @@
         </article>
         <article class="card grid-1">
           <header class="card-head">
-            <h2>기간별 성과 · 증감률</h2>
-            <span class="muted">증감률 = (이번 기간 − 직전 기간) ÷ 직전 기간</span>
+            <h2>조회수 순위 TOP5 <span class="muted" id="top-month"></span></h2>
+            <span class="muted">연속으로 TOP5에 든 글은 개월 수를 표시</span>
           </header>
-          <div class="table-wrap"><table class="table" id="period-table"></table></div>
+          <div class="tops" id="tops"></div>
         </article>
         <article class="card">
           <header class="card-head">
-            <h2>입력한 기록 <span class="muted" id="stats-count"></span></h2>
-            <span class="muted">행을 누르면 수정 · 기준일 하나에 블로그별 1건</span>
+            <h2>월별 통계 · 증감률</h2>
+            <span class="muted">행을 누르면 수정 · 전월/전년 = 전월 대비, 전년 동월 대비</span>
           </header>
-          <div class="table-wrap"><table class="table" id="stats-table"></table></div>
+          <div class="table-wrap"><table class="table" id="period-table"></table></div>
         </article>
       </section>
     </main>
@@ -261,21 +258,22 @@
     </form>
   </dialog>
 
-  <!-- 블로그 성과 입력 -->
+  <!-- 블로그 월 통계 입력 -->
   <dialog id="stat-editor">
     <form method="dialog" id="stat-form">
       <header class="modal-head">
-        <h2 id="stat-title">블로그 성과 기록</h2>
+        <h2 id="stat-title">블로그 월 통계</h2>
         <button type="button" class="btn btn-ghost btn-sm" data-close aria-label="닫기">✕</button>
       </header>
       <div class="form-grid">
         <label>블로그<input name="blog" id="s-blog" list="dl-blog" required /></label>
-        <label>기준일<input type="date" name="date" id="s-date" required /></label>
-        <p class="span-2 form-hint">하루치, 한 주 합계, 한 달 합계 어느 것이든 기록할 수 있습니다. 월 합계는 그 달 1일, 주 합계는 그 주 월요일로 입력하세요.</p>
+        <label>월<input type="month" name="month" id="s-month" required /></label>
         <label>조회수<input type="number" min="0" name="views" id="s-views" inputmode="numeric" /></label>
-        <label>방문자수<input type="number" min="0" name="visitors" id="s-visitors" inputmode="numeric" /></label>
-        <label>이웃 수 (기준일 현재)<input type="number" min="0" name="neighbors" id="s-neighbors" inputmode="numeric" /></label>
-        <label>메모<input name="memo" id="s-memo" placeholder="예: 추석 연휴, 상위 노출 글 발생" /></label>
+        <label>순방문자수<input type="number" min="0" name="visitors" id="s-visitors" inputmode="numeric" /></label>
+        <label>체류시간 (시트와 같은 값)<input type="number" min="0" step="0.01" name="dwell" id="s-dwell" inputmode="decimal" /></label>
+        <label>포스팅수<input type="number" min="0" name="posts" id="s-posts" inputmode="numeric" /></label>
+        <label class="span-2">조회수 순위 TOP5 (한 줄에 제목 하나, 1위부터)<textarea name="top" id="s-top" rows="5"></textarea></label>
+        <label class="span-2">메모<input name="memo" id="s-memo" placeholder="예: 추석 연휴, 상위 노출 글 발생" /></label>
       </div>
       <footer class="modal-foot">
         <button type="button" class="btn btn-danger-ghost" id="btn-delete-stat">삭제</button>
@@ -305,6 +303,7 @@
   <div class="toast" id="toast" hidden></div>
 
   <script src="seed.js"></script>
+  <script src="seed-blog.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
