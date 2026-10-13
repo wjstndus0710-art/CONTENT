@@ -4,10 +4,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import {validDate,invalidTasks,isMonday} from './journal-rules.js';
 const invalidContent=c=>{if(!c || typeof c!=='object' || Array.isArray(c))return true;const date=new Date(`${c.publish_date}T00:00:00Z`);return typeof c.title !== 'string' || !c.title.trim() || c.title.length>200 || !['','블로그','인스타그램','유튜브','뉴스레터','기타','네이버 블로그','스티비','홈페이지 인사이트','티스토리','카카오톡 소식'].includes(c.channel) || !['아이디어','제작 중','발행 예정','발행 완료','발행 확인 필요'].includes(c.status) || (c.publish_date!=='' && (!/^\d{4}-\d{2}-\d{2}$/.test(c.publish_date) || !Number.isFinite(date.getTime()) || date.toISOString().slice(0,10)!==c.publish_date)) || ![0,7,14,30].includes(c.cadence) || typeof c.notes!=='string' || c.notes.length>10000;};
-const validDate=value=>{const d=new Date(`${value}T00:00:00Z`);return typeof value==='string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(d.getTime()) && d.toISOString().slice(0,10)===value;};
-const invalidTasks=tasks=>!Array.isArray(tasks) || tasks.length>100 || tasks.some(t=>!t || typeof t!=='object' || Array.isArray(t) || typeof t.text!=='string' || !t.text.trim() || t.text.length>500 || typeof t.done!=='boolean' || Object.keys(t).some(k=>!['text','done'].includes(k)));
-const isMonday=value=>validDate(value) && new Date(`${value}T00:00:00Z`).getUTCDay()===1;
 const root = path.dirname(fileURLToPath(import.meta.url));
 export function createApp(dataDir = process.env.DATA_DIR || path.join(root, 'data'), auth = {}) {
  const username=auth.username ?? process.env.APP_USER ?? 'admin';

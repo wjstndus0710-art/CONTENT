@@ -10,5 +10,8 @@
     "start": "node server.js",
     "test": "node --test",
     "import:xlsx": "python3 scripts/import_xlsx.py"
+  },
+  "dependencies": {
+    "@netlify/blobs": "11.1.1"
   }
 }

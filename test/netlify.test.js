@@ -1,0 +1,27 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {createHandler} from '../netlify/functions/api.mjs';
+test('Netlify function: login, journal saves, backup round trip',async()=>{
+ const memory=()=>{const map=new Map();return {keys:async p=>[...map.keys()].filter(k=>k.startsWith(p)),get:async k=>map.get(k)??null,set:async(k,v)=>{map.set(k,structuredClone(v));}};};
+ const env={APP_USER:'admin',APP_PASSWORD:'correct horse battery'};
+ const handler=createHandler(memory(),env),other=createHandler(memory(),env);
+ const auth='Basic '+Buffer.from('admin:correct horse battery').toString('base64');
+ const call=async(h,method,path,body,headers={})=>{const res=await h(new Request('https://journal.example'+path,{method,headers:{'Content-Type':'application/json',Authorization:auth,...headers},body:body===undefined?undefined:JSON.stringify(body)}));return {status:res.status,data:await res.json(),res};};
+ assert.equal((await createHandler(memory(),{})(new Request('https://journal.example/api/journal'))).status,503);
+ const anonymous=await handler(new Request('https://journal.example/api/journal'));assert.equal(anonymous.status,401);assert.match(anonymous.headers.get('www-authenticate'),/Basic/);
+ assert.equal((await call(handler,'GET','/api/journal',undefined,{Authorization:'Basic '+Buffer.from('admin:wrong').toString('base64')})).status,401);
+ assert.deepEqual((await call(handler,'GET','/api/journal')).data,{days:[],weeks:[]});
+ assert.deepEqual((await call(handler,'PUT','/api/journal/days/2026-10-13',{tasks:[{text:' 썸네일 ',done:true}]})).data,{date:'2026-10-13',tasks:[{text:'썸네일',done:true}]});
+ await call(handler,'PUT','/api/journal/days/2026-10-12',{tasks:[{text:'업로드',done:false}]});
+ assert.equal((await call(handler,'PUT','/api/journal/days/2026-02-30',{tasks:[]})).status,400);
+ assert.equal((await call(handler,'PUT','/api/journal/days/2026-10-13',{tasks:[{text:'a',done:'yes'}]})).status,400);
+ assert.equal((await call(handler,'PUT','/api/journal/weeks/2026-10-13',{focus:'x'})).status,400);
+ assert.equal((await call(handler,'PUT','/api/journal/weeks/2026-10-12',{focus:'EDI 주 2회'})).status,200);
+ assert.equal((await call(handler,'PUT','/api/journal/weeks/2026-10-12',{focus:'x'},{Origin:'https://evil.example'})).status,403);
+ const journal=(await call(handler,'GET','/api/journal')).data;assert.deepEqual(journal.days.map(d=>d.date),['2026-10-12','2026-10-13']);
+ const backup=(await call(handler,'GET','/api/export')).data;assert.equal(backup.journalDays.length,2);assert.equal(backup.journalWeeks[0].id,1);
+ assert.equal((await call(other,'POST','/api/restore',{...backup,journalDays:[...backup.journalDays,backup.journalDays[0]]})).status,400);
+ assert.equal((await call(other,'POST','/api/restore',backup)).status,200);
+ assert.deepEqual((await call(other,'GET','/api/journal')).data,journal);
+ assert.equal((await call(other,'POST','/api/restore',backup)).status,409);
+});
