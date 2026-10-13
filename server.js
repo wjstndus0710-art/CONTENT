@@ -36,7 +36,7 @@ export function createApp(dataDir = process.env.DATA_DIR || path.join(root, 'dat
    res.setHeader('X-Frame-Options','DENY');
    res.setHeader('Referrer-Policy','same-origin');
    res.setHeader('Cache-Control','no-store');
-   res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+   res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
    if(url.pathname==='/healthz' && req.method==='GET') {db.prepare('SELECT 1').get();return json(res,200,{ok:true});}
    if(expected){
     const header=req.headers.authorization||'';
