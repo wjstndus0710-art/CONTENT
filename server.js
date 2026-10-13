@@ -5,6 +5,9 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 const invalidContent=c=>{if(!c || typeof c!=='object' || Array.isArray(c))return true;const date=new Date(`${c.publish_date}T00:00:00Z`);return typeof c.title !== 'string' || !c.title.trim() || c.title.length>200 || !['','블로그','인스타그램','유튜브','뉴스레터','기타','네이버 블로그','스티비','홈페이지 인사이트','티스토리','카카오톡 소식'].includes(c.channel) || !['아이디어','제작 중','발행 예정','발행 완료','발행 확인 필요'].includes(c.status) || (c.publish_date!=='' && (!/^\d{4}-\d{2}-\d{2}$/.test(c.publish_date) || !Number.isFinite(date.getTime()) || date.toISOString().slice(0,10)!==c.publish_date)) || ![0,7,14,30].includes(c.cadence) || typeof c.notes!=='string' || c.notes.length>10000;};
+const validDate=value=>{const d=new Date(`${value}T00:00:00Z`);return typeof value==='string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(d.getTime()) && d.toISOString().slice(0,10)===value;};
+const invalidTasks=tasks=>!Array.isArray(tasks) || tasks.length>100 || tasks.some(t=>!t || typeof t!=='object' || Array.isArray(t) || typeof t.text!=='string' || !t.text.trim() || t.text.length>500 || typeof t.done!=='boolean' || Object.keys(t).some(k=>!['text','done'].includes(k)));
+const isMonday=value=>validDate(value) && new Date(`${value}T00:00:00Z`).getUTCDay()===1;
 const root = path.dirname(fileURLToPath(import.meta.url));
 export function createApp(dataDir = process.env.DATA_DIR || path.join(root, 'data'), auth = {}) {
  const username=auth.username ?? process.env.APP_USER ?? 'admin';
@@ -19,7 +22,11 @@ export function createApp(dataDir = process.env.DATA_DIR || path.join(root, 'dat
  if (!db.prepare('PRAGMA table_info(content)').all().some(c=>c.name==='metadata')) db.exec("ALTER TABLE content ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'");
  db.exec(`CREATE TABLE IF NOT EXISTS records (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, fields TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS import_items(source_key TEXT PRIMARY KEY,kind TEXT NOT NULL,record_id INTEGER NOT NULL);
- CREATE TABLE IF NOT EXISTS import_sources(sha256 TEXT PRIMARY KEY,filename TEXT NOT NULL,sheets TEXT NOT NULL);`);
+ CREATE TABLE IF NOT EXISTS import_sources(sha256 TEXT PRIMARY KEY,filename TEXT NOT NULL,sheets TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS journal_days(id INTEGER PRIMARY KEY,date TEXT NOT NULL UNIQUE,tasks TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS journal_weeks(id INTEGER PRIMARY KEY,week_start TEXT NOT NULL UNIQUE,focus TEXT NOT NULL);`);
+ const decodeDay=d=>({...d,tasks:JSON.parse(d.tasks)});
+ const readBody=async(req,limit)=>{let body='';for await(const chunk of req){body+=chunk;if(Buffer.byteLength(body)>limit)return {error:413};}try{return {value:JSON.parse(body)};}catch{return {error:400};}};
  const decode=c=>({...c,metadata:JSON.parse(c.metadata)});
  const json = (res, code, value) => {res.writeHead(code, {'Content-Type':'application/json; charset=utf-8'}); res.end(JSON.stringify(value));};
  const server = http.createServer(async (req,res) => {
@@ -61,7 +68,7 @@ export function createApp(dataDir = process.env.DATA_DIR || path.join(root, 'dat
    }
    if(match && req.method==='DELETE') {const r=db.prepare('DELETE FROM content WHERE id=?').run(Number(match[1])); return json(res,r.changes?200:404,r.changes?{ok:true}:{error:'콘텐츠를 찾을 수 없습니다.'});}
    if(url.pathname==='/api/import-summary' && req.method==='GET') return json(res,200,db.prepare('SELECT sha256,filename FROM import_sources').all());
-   if(url.pathname==='/api/export' && req.method==='GET') {res.setHeader('Content-Disposition','attachment; filename="content-backup.json"'); return json(res,200,{content:db.prepare('SELECT * FROM content').all().map(decode),records:db.prepare('SELECT * FROM records').all().map(r=>({...r,fields:JSON.parse(r.fields)})),importItems:db.prepare('SELECT * FROM import_items').all(),sources:db.prepare('SELECT * FROM import_sources').all().map(r=>({...r,sheets:JSON.parse(r.sheets)}))});}
+   if(url.pathname==='/api/export' && req.method==='GET') {res.setHeader('Content-Disposition','attachment; filename="content-backup.json"'); return json(res,200,{content:db.prepare('SELECT * FROM content').all().map(decode),records:db.prepare('SELECT * FROM records').all().map(r=>({...r,fields:JSON.parse(r.fields)})),importItems:db.prepare('SELECT * FROM import_items').all(),sources:db.prepare('SELECT * FROM import_sources').all().map(r=>({...r,sheets:JSON.parse(r.sheets)})),journalDays:db.prepare('SELECT * FROM journal_days ORDER BY date').all().map(decodeDay),journalWeeks:db.prepare('SELECT * FROM journal_weeks ORDER BY week_start').all()});}
    if(url.pathname==='/api/restore' && req.method==='POST') {
     let body='';for await(const chunk of req){body+=chunk;if(Buffer.byteLength(body)>5242880)return json(res,413,{error:'백업 파일은 5MB 이하만 지원합니다.'});}
     let backup;try{backup=JSON.parse(body);}catch{return json(res,400,{error:'JSON 백업 파일을 확인해 주세요.'});}
@@ -71,9 +78,16 @@ export function createApp(dataDir = process.env.DATA_DIR || path.join(root, 'dat
     for(const c of backup.content){if(invalidContent(c)||!validId(c.id)||contentIds.has(c.id)||!c.metadata||typeof c.metadata!=='object'||Array.isArray(c.metadata))return json(res,400,{error:'콘텐츠 백업 항목을 확인해 주세요.'});contentIds.add(c.id);}
     for(const r of backup.records){if(!validId(r.id)||recordIds.has(r.id)||!['publications','keywords'].includes(r.kind)||!r.fields||typeof r.fields!=='object'||Array.isArray(r.fields)||Object.values(r.fields).some(v=>typeof v!=='string'))return json(res,400,{error:'발행·키워드 백업 항목을 확인해 주세요.'});recordIds.add(r.id);}
     for(const source of backup.sources)if(!/^[a-f0-9]{64}$/.test(source.sha256)||typeof source.filename!=='string'||!source.sheets||typeof source.sheets!=='object')return json(res,400,{error:'원본 시트 백업을 확인해 주세요.'});
+    // Backups made before the journal existed have no journal arrays.
+    const journalDays=backup.journalDays??[],journalWeeks=backup.journalWeeks??[];
+    if(!Array.isArray(journalDays)||!Array.isArray(journalWeeks)||journalDays.length+journalWeeks.length>10000)return json(res,400,{error:'마케팅 일지 백업을 확인해 주세요.'});
+    const dayIds=new Set(),dayDates=new Set(),weekIds=new Set(),weekDates=new Set();
+    for(const d of journalDays){if(!validId(d?.id)||dayIds.has(d.id)||!validDate(d.date)||dayDates.has(d.date)||invalidTasks(d.tasks))return json(res,400,{error:'마케팅 일지 백업을 확인해 주세요.'});dayIds.add(d.id);dayDates.add(d.date);}
+    for(const w of journalWeeks){if(!validId(w?.id)||weekIds.has(w.id)||!isMonday(w.week_start)||weekDates.has(w.week_start)||typeof w.focus!=='string'||w.focus.length>2000)return json(res,400,{error:'마케팅 일지 백업을 확인해 주세요.'});weekIds.add(w.id);weekDates.add(w.week_start);}
     const importItems=backup.importItems??[];
-    if(!Array.isArray(importItems)||importItems.some(i=>typeof i.source_key!=='string'||!['content','publications','keywords'].includes(i.kind)||!validId(i.record_id)||!(i.kind==='content'?contentIds:recordIds).has(i.record_id)))return json(res,400,{error:'가져오기 이력을 확인해 주세요.'});
-    if(db.prepare('SELECT COUNT(*) AS n FROM content').get().n||db.prepare('SELECT COUNT(*) AS n FROM records').get().n||db.prepare('SELECT COUNT(*) AS n FROM import_sources').get().n)return json(res,409,{error:'기존 데이터 보호를 위해 빈 서버에서만 복원할 수 있습니다.'});
+    const idsByKind={content:contentIds,publications:recordIds,keywords:recordIds,journal_day:dayIds,journal_week:weekIds};
+    if(!Array.isArray(importItems)||importItems.some(i=>typeof i.source_key!=='string'||!idsByKind[i.kind]||!validId(i.record_id)||!idsByKind[i.kind].has(i.record_id)))return json(res,400,{error:'가져오기 이력을 확인해 주세요.'});
+    if(['content','records','import_sources','journal_days','journal_weeks'].some(t=>db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get().n))return json(res,409,{error:'기존 데이터 보호를 위해 빈 서버에서만 복원할 수 있습니다.'});
     db.exec('BEGIN IMMEDIATE');
     try{
      const insert=db.prepare('INSERT INTO content(id,title,channel,status,publish_date,cadence,notes,metadata) VALUES(?,?,?,?,?,?,?,?)');
@@ -81,9 +95,29 @@ export function createApp(dataDir = process.env.DATA_DIR || path.join(root, 'dat
      for(const r of backup.records)db.prepare('INSERT INTO records(id,kind,fields) VALUES(?,?,?)').run(r.id,r.kind,JSON.stringify(r.fields));
      for(const source of backup.sources)db.prepare('INSERT INTO import_sources VALUES(?,?,?)').run(source.sha256,source.filename,JSON.stringify(source.sheets));
      for(const item of importItems)db.prepare('INSERT INTO import_items VALUES(?,?,?)').run(item.source_key,item.kind,item.record_id);
+     for(const d of journalDays)db.prepare('INSERT INTO journal_days(id,date,tasks) VALUES(?,?,?)').run(d.id,d.date,JSON.stringify(d.tasks));
+     for(const w of journalWeeks)db.prepare('INSERT INTO journal_weeks(id,week_start,focus) VALUES(?,?,?)').run(w.id,w.week_start,w.focus);
      db.exec('COMMIT');
     }catch{db.exec('ROLLBACK');return json(res,400,{error:'백업을 복원하지 못했습니다. 기존 상태를 유지했습니다.'});}
-    return json(res,200,{content:backup.content.length,records:backup.records.length});
+    return json(res,200,{content:backup.content.length,records:backup.records.length,journalDays:journalDays.length});
+   }
+   if(url.pathname==='/api/journal' && req.method==='GET') return json(res,200,{days:db.prepare('SELECT * FROM journal_days ORDER BY date').all().map(decodeDay),weeks:db.prepare('SELECT * FROM journal_weeks ORDER BY week_start').all()});
+   const journalMatch=url.pathname.match(/^\/api\/journal\/(days|weeks)\/(\d{4}-\d{2}-\d{2})$/);
+   if(journalMatch && req.method==='PUT') {
+    const [,part,date]=journalMatch;
+    if(part==='days'?!validDate(date):!isMonday(date)) return json(res,400,{error:part==='days'?'날짜를 확인해 주세요.':'주간 목표는 월요일 날짜로 저장합니다.'});
+    const body=await readBody(req,65536);
+    if(body.error) return json(res,body.error,{error:body.error===413?'입력 내용이 너무 큽니다.':'입력 형식이 잘못되었습니다.'});
+    const v=body.value;
+    if(part==='days'){
+     if(!v || typeof v!=='object' || invalidTasks(v.tasks)) return json(res,400,{error:'할 일은 500자 이내로 100개까지 입력할 수 있습니다.'});
+     const tasks=v.tasks.map(t=>({text:t.text.trim(),done:t.done}));
+     db.prepare('INSERT INTO journal_days(date,tasks) VALUES(?,?) ON CONFLICT(date) DO UPDATE SET tasks=excluded.tasks').run(date,JSON.stringify(tasks));
+     return json(res,200,decodeDay(db.prepare('SELECT * FROM journal_days WHERE date=?').get(date)));
+    }
+    if(!v || typeof v!=='object' || typeof v.focus!=='string' || v.focus.length>2000) return json(res,400,{error:'주간 목표는 2000자 이내로 입력해 주세요.'});
+    db.prepare('INSERT INTO journal_weeks(week_start,focus) VALUES(?,?) ON CONFLICT(week_start) DO UPDATE SET focus=excluded.focus').run(date,v.focus);
+    return json(res,200,db.prepare('SELECT * FROM journal_weeks WHERE week_start=?').get(date));
    }
    const recordsMatch=url.pathname.match(/^\/api\/records\/(publications|keywords)(?:\/(\d+))?$/);
    if(recordsMatch) {
