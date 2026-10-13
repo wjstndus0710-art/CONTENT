@@ -18,7 +18,7 @@ export function createHandler(store, env=process.env) {
   if(typeof password!=='string'||password.length<12) return json(503,{error:'Netlify 환경 변수 APP_PASSWORD(12자 이상)를 설정해 주세요.'});
   const header=req.headers.get('authorization')||'';
   const supplied=header.startsWith('Basic ')?Buffer.from(header.slice(6),'base64').toString('utf8'):'';
-  if(!timingSafeEqual(digest(username+':'+password),digest(supplied))) return json(401,{error:'로그인이 필요합니다.'},{'WWW-Authenticate':'Basic realm="Marketing Journal", charset="UTF-8"'});
+  if(!timingSafeEqual(digest(username+':'+password),digest(supplied))) return json(401,{error:'로그인이 필요합니다.'}); // the page shows its own login form
   const url=new URL(req.url);
   if(['POST','PUT'].includes(req.method)){
    const origin=req.headers.get('origin');

@@ -8,7 +8,19 @@ const dayIndex=date=>(new Date(date+'T00:00:00Z').getUTCDay()+6)%7;
 const mondayOf=date=>addDays(date,-dayIndex(date));
 const short=date=>`${Number(date.slice(5,7))}/${Number(date.slice(8))}`;
 let journal={days:{},weeks:{}},weekStart=mondayOf(today()),month=today().slice(0,7),focusDate=null;
-async function api(url,options){const res=await fetch(url,options);const data=await res.json();if(!res.ok)throw new Error(data.error||'요청에 실패했습니다.');return data;}
+// Netlify serves the page publicly, so the API login is kept here and sent with every request.
+const TOKEN_KEY='journal-auth';
+const readToken=()=>{try{return sessionStorage.getItem(TOKEN_KEY)||localStorage.getItem(TOKEN_KEY);}catch{return null;}};
+const writeToken=(token,remember)=>{try{sessionStorage.removeItem(TOKEN_KEY);localStorage.removeItem(TOKEN_KEY);if(token)(remember?localStorage:sessionStorage).setItem(TOKEN_KEY,token);}catch{}};
+let token=readToken();
+class AuthError extends Error{}
+async function api(url,options={}){
+ const headers={...(options.headers||{})};if(token)headers.Authorization='Basic '+token;
+ const res=await fetch(url,{...options,headers});let data={};try{data=await res.json();}catch{}
+ if(res.status===401)throw new AuthError(data.error||'로그인이 필요합니다.');
+ if(!res.ok)throw new Error(data.error||'요청에 실패했습니다.');return data;
+}
+function showLogin(message){$('login').hidden=false;$('logout').hidden=true;$('login-error').textContent=message||'';$('login-password').value='';$('login-password').focus();}
 const put=(url,value)=>api(url,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(value)});
 function node(tag,text,className){const el=document.createElement(tag);if(text!==undefined)el.textContent=text;if(className)el.className=className;return el;}
 const tasksOf=date=>journal.days[date]||[];
@@ -75,13 +87,13 @@ function render(){const [y,m]=month.split('-').map(Number),last=new Date(Date.UT
 async function saveDay(date,tasks){
  const previous=journal.days[date];journal.days[date]=tasks;render();
  try{await put('/api/journal/days/'+date,{tasks});$('message').textContent='';}
- catch(e){if(previous)journal.days[date]=previous;else delete journal.days[date];render();$('message').textContent=e.message;}
+ catch(e){if(previous)journal.days[date]=previous;else delete journal.days[date];render();if(e instanceof AuthError)showLogin(e.message);else $('message').textContent=e.message;}
 }
 async function moveTask(date,index,next){
  const from=tasksOf(date),task=from[index];if(tasksOf(next).length>=100){$('message').textContent='다음 날 할 일이 100개라 넘길 수 없습니다.';return;}
  await saveDay(next,[...tasksOf(next),task]);await saveDay(date,from.filter((x,i)=>i!==index));$('message').textContent=`‘${task.text}’를 ${short(next)}로 넘겼습니다.`;
 }
-async function load(){const data=await api('/api/journal');journal={days:Object.fromEntries(data.days.map(d=>[d.date,d.tasks])),weeks:Object.fromEntries(data.weeks.map(w=>[w.week_start,w.focus]))};render();}
+async function load(){const data=await api('/api/journal');$('login').hidden=true;$('logout').hidden=!token;journal={days:Object.fromEntries(data.days.map(d=>[d.date,d.tasks])),weeks:Object.fromEntries(data.weeks.map(w=>[w.week_start,w.focus]))};render();}
 $('add').onclick=()=>{$('search').value='';weekStart=mondayOf(today());focusDate=today();render();};
 $('prev-week').onclick=()=>{weekStart=addDays(weekStart,-7);render();};$('next-week').onclick=()=>{weekStart=addDays(weekStart,7);render();};$('this-week').onclick=()=>{weekStart=mondayOf(today());month=today().slice(0,7);render();};
 const shiftMonth=n=>{const [y,m]=month.split('-').map(Number);month=new Date(Date.UTC(y,m-1+n,1)).toISOString().slice(0,7);renderMiniCalendar();};
@@ -91,5 +103,11 @@ $('show-weekend').checked=stored('show-weekend')==='1';$('show-weekend').onchang
 $('week-focus').onchange=async()=>{const week=weekStart,focus=$('week-focus').value;try{await put('/api/journal/weeks/'+week,{focus});journal.weeks[week]=focus;$('focus-status').textContent='저장했습니다.';}catch(e){$('focus-status').textContent=e.message;}};
 $('week-focus').oninput=()=>{$('focus-status').textContent='입력 칸 밖을 누르면 저장됩니다.';};
 $('restore').onclick=()=>$('restore-file').click();
-$('restore-file').onchange=async()=>{const file=$('restore-file').files[0];if(!file)return;try{if(file.size>5242880)throw new Error('5MB 이하의 JSON 백업 파일을 선택해 주세요.');if(!confirm('빈 서버에 백업을 복원합니다. 기존 데이터가 있으면 복원하지 않습니다. 진행할까요?'))return;await api('/api/restore',{method:'POST',headers:{'Content-Type':'application/json'},body:await file.text()});await load();$('message').textContent='백업을 복원했습니다.';}catch(e){$('message').textContent=e.message;}finally{$('restore-file').value='';}};
-load().catch(e=>{$('message').textContent='일지를 불러오지 못했습니다. '+e.message;});
+$('restore-file').onchange=async()=>{const file=$('restore-file').files[0];if(!file)return;try{if(file.size>5242880)throw new Error('5MB 이하의 JSON 백업 파일을 선택해 주세요.');if(!confirm('빈 서버에 백업을 복원합니다. 기존 데이터가 있으면 복원하지 않습니다. 진행할까요?'))return;await api('/api/restore',{method:'POST',headers:{'Content-Type':'application/json'},body:await file.text()});await load();$('message').textContent='백업을 복원했습니다.';}catch(e){if(e instanceof AuthError)showLogin(e.message);else $('message').textContent=e.message;}finally{$('restore-file').value='';}};
+const start=()=>load().catch(e=>{if(e instanceof AuthError)showLogin(token?'아이디 또는 비밀번호가 맞지 않습니다.':'');else showLogin('일지를 불러오지 못했습니다. '+e.message);});
+$('login-form').onsubmit=async event=>{event.preventDefault();const user=$('login-user').value.trim(),password=$('login-password').value;
+ token=btoa(String.fromCharCode(...new TextEncoder().encode(user+':'+password)));$('login-submit').disabled=true;$('login-error').textContent='';
+ try{await load();writeToken(token,$('login-remember').checked);}catch(e){token=null;$('login-error').textContent=e instanceof AuthError?'아이디 또는 비밀번호가 맞지 않습니다.':e.message;}finally{$('login-submit').disabled=false;}};
+$('logout').onclick=()=>{token=null;writeToken(null);journal={days:{},weeks:{}};render();showLogin('로그아웃했습니다.');};
+$('export').onclick=async()=>{try{const data=await api('/api/export');const url=URL.createObjectURL(new Blob([JSON.stringify(data)],{type:'application/json'}));const a=node('a');a.href=url;a.download=`journal-backup-${today()}.json`;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(e){if(e instanceof AuthError)showLogin(e.message);else $('message').textContent=e.message;}};
+start();
