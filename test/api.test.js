@@ -12,7 +12,7 @@ test('content lifecycle, validation, and durable storage',async()=>{
  try{
  let base=await start();
  const request=async(method,url,value)=>{const res=await fetch(base+url,{method,headers:{'Content-Type':'application/json'},body:value===undefined?undefined:JSON.stringify(value)});return {status:res.status,data:await res.json()};};
- assert.match(await (await fetch(base)).text(),/콘텐츠 스튜디오/);
+ assert.match(await (await fetch(base)).text(),/마케팅 일지/);
  assert.deepEqual((await request('GET','/api/content')).data,[]);
  const item={title:'월간 콘텐츠',channel:'뉴스레터',status:'제작 중',publish_date:'2026-10-15',cadence:30,notes:'참고 기록'};
  assert.equal((await request('POST','/api/content',{...item,publish_date:'2026-02-30'})).status,400);

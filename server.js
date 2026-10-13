@@ -41,7 +41,7 @@ export function createApp(dataDir = process.env.DATA_DIR || path.join(root, 'dat
    if(expected){
     const header=req.headers.authorization||'';
     const supplied=header.startsWith('Basic ')?Buffer.from(header.slice(6),'base64').toString('utf8'):'';
-    if(!timingSafeEqual(expected,digest(supplied))){res.setHeader('WWW-Authenticate','Basic realm="Content Studio", charset="UTF-8"');return json(res,401,{error:'로그인이 필요합니다.'});}
+    if(!timingSafeEqual(expected,digest(supplied))){res.setHeader('WWW-Authenticate','Basic realm="Marketing Journal", charset="UTF-8"');return json(res,401,{error:'로그인이 필요합니다.'});}
    }
    if(['POST','PUT','DELETE'].includes(req.method)){
     if(req.headers.origin){let origin;try{origin=new URL(req.headers.origin);}catch{return json(res,403,{error:'허용되지 않은 요청입니다.'});}if(origin.host!==req.headers.host)return json(res,403,{error:'허용되지 않은 요청입니다.'});}
@@ -145,7 +145,7 @@ export function createApp(dataDir = process.env.DATA_DIR || path.join(root, 'dat
  return server;
 }
 if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
- const server=createApp();server.listen(Number(process.env.PORT||3000),'0.0.0.0',()=>console.log('Content Studio started on port '+(process.env.PORT||3000)));
+ const server=createApp();server.listen(Number(process.env.PORT||3000),'0.0.0.0',()=>console.log('Marketing Journal started on port '+(process.env.PORT||3000)));
  const stop=()=>{server.close(()=>process.exit(0));setTimeout(()=>process.exit(1),10000).unref();};
  process.on('SIGTERM',stop);process.on('SIGINT',stop);
 }
