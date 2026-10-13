@@ -99,6 +99,7 @@ export function createApp(dataDir = process.env.DATA_DIR || path.join(root, 'dat
     }catch{db.exec('ROLLBACK');return json(res,400,{error:'백업을 복원하지 못했습니다. 기존 상태를 유지했습니다.'});}
     return json(res,200,{content:backup.content.length,records:backup.records.length,journalDays:journalDays.length});
    }
+   if(url.pathname==='/api/session' && req.method==='GET') return json(res,200,{ok:true});
    if(url.pathname==='/api/journal' && req.method==='GET') return json(res,200,{days:db.prepare('SELECT * FROM journal_days ORDER BY date').all().map(decodeDay),weeks:db.prepare('SELECT * FROM journal_weeks ORDER BY week_start').all()});
    const journalMatch=url.pathname.match(/^\/api\/journal\/(days|weeks)\/(\d{4}-\d{2}-\d{2})$/);
    if(journalMatch && req.method==='PUT') {

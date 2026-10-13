@@ -14,12 +14,15 @@ export function createHandler(store, env=process.env) {
   return {days,weeks};
  };
  return async req=>{
+  const url=new URL(req.url);
+  // Reading is public; every change, backup and restore needs the login.
+  if(url.pathname==='/api/journal'&&req.method==='GET'){try{return json(200,await readAll());}catch{return json(500,{error:'일지를 불러오지 못했습니다.'});}}
   const password=env.APP_PASSWORD,username=env.APP_USER||'admin';
   if(typeof password!=='string'||password.length<12) return json(503,{error:'Netlify 환경 변수 APP_PASSWORD(12자 이상)를 설정해 주세요.'});
   const header=req.headers.get('authorization')||'';
   const supplied=header.startsWith('Basic ')?Buffer.from(header.slice(6),'base64').toString('utf8'):'';
   if(!timingSafeEqual(digest(username+':'+password),digest(supplied))) return json(401,{error:'로그인이 필요합니다.'}); // the page shows its own login form
-  const url=new URL(req.url);
+  if(url.pathname==='/api/session'&&req.method==='GET') return json(200,{ok:true});
   if(['POST','PUT'].includes(req.method)){
    const origin=req.headers.get('origin');
    if(origin){let host;try{host=new URL(origin).host;}catch{host=null;}if(host!==url.host)return json(403,{error:'허용되지 않은 요청입니다.'});}
@@ -27,7 +30,6 @@ export function createHandler(store, env=process.env) {
   }
   const readBody=async limit=>{const text=await req.text();if(Buffer.byteLength(text)>limit)return {error:413};try{return {value:JSON.parse(text)};}catch{return {error:400};}};
   try{
-   if(url.pathname==='/api/journal'&&req.method==='GET') return json(200,await readAll());
    const match=url.pathname.match(/^\/api\/journal\/(days|weeks)\/(\d{4}-\d{2}-\d{2})$/);
    if(match&&req.method==='PUT'){
     const [,part,date]=match;
@@ -78,4 +80,4 @@ export default async req=>{
  return handler(req);
 };
 
-export const config={path:['/api/journal','/api/journal/*','/api/export','/api/restore']};
+export const config={path:['/api/journal','/api/journal/*','/api/session','/api/export','/api/restore']};

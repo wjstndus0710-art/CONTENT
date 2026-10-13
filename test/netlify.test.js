@@ -7,9 +7,13 @@ test('Netlify function: login, journal saves, backup round trip',async()=>{
  const handler=createHandler(memory(),env),other=createHandler(memory(),env);
  const auth='Basic '+Buffer.from('admin:correct horse battery').toString('base64');
  const call=async(h,method,path,body,headers={})=>{const res=await h(new Request('https://journal.example'+path,{method,headers:{'Content-Type':'application/json',Authorization:auth,...headers},body:body===undefined?undefined:JSON.stringify(body)}));return {status:res.status,data:await res.json(),res};};
- assert.equal((await createHandler(memory(),{})(new Request('https://journal.example/api/journal'))).status,503);
- const anonymous=await handler(new Request('https://journal.example/api/journal'));assert.equal(anonymous.status,401);assert.equal(anonymous.headers.get('www-authenticate'),null);
- assert.equal((await call(handler,'GET','/api/journal',undefined,{Authorization:'Basic '+Buffer.from('admin:wrong').toString('base64')})).status,401);
+ assert.equal((await createHandler(memory(),{})(new Request('https://journal.example/api/session'))).status,503);
+ assert.equal((await createHandler(memory(),{})(new Request('https://journal.example/api/journal'))).status,200);
+ const anonymous=await handler(new Request('https://journal.example/api/session'));assert.equal(anonymous.status,401);
+ assert.equal((await handler(new Request('https://journal.example/api/journal/days/2026-10-13',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({tasks:[]})}))).status,401);
+ assert.equal((await handler(new Request('https://journal.example/api/export'))).status,401);
+ assert.equal((await call(handler,'GET','/api/session')).status,200);assert.equal(anonymous.headers.get('www-authenticate'),null);
+ assert.equal((await call(handler,'GET','/api/session',undefined,{Authorization:'Basic '+Buffer.from('admin:wrong').toString('base64')})).status,401);
  assert.deepEqual((await call(handler,'GET','/api/journal')).data,{days:[],weeks:[]});
  assert.deepEqual((await call(handler,'PUT','/api/journal/days/2026-10-13',{tasks:[{text:' 썸네일 ',done:true}]})).data,{date:'2026-10-13',tasks:[{text:'썸네일',done:true}]});
  await call(handler,'PUT','/api/journal/days/2026-10-12',{tasks:[{text:'업로드',done:false}]});
@@ -23,5 +27,6 @@ test('Netlify function: login, journal saves, backup round trip',async()=>{
  assert.equal((await call(other,'POST','/api/restore',{...backup,journalDays:[...backup.journalDays,backup.journalDays[0]]})).status,400);
  assert.equal((await call(other,'POST','/api/restore',backup)).status,200);
  assert.deepEqual((await call(other,'GET','/api/journal')).data,journal);
+ const publicRead=await other(new Request('https://journal.example/api/journal'));assert.equal(publicRead.status,200);assert.deepEqual(await publicRead.json(),journal);
  assert.equal((await call(other,'POST','/api/restore',backup)).status,409);
 });
