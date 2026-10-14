@@ -24,6 +24,7 @@
       <button class="tab" data-view="blog" role="tab"><span>↗</span> 블로그 성과</button>
       <div class="nav-section">데이터 관리</div>
       <div class="nav-sub" id="menu-data">
+        <button data-action="manage-divisions" data-edit-only>사업부 관리</button>
         <button data-action="import-file" data-edit-only>엑셀/CSV 가져오기</button>
         <button data-action="import-stats" data-edit-only>블로그 통계 가져오기</button>
         <button data-action="export-csv">CSV 내보내기</button>
@@ -301,6 +302,23 @@
       <button type="submit" class="btn btn-primary">로그인</button>
       <button type="button" class="btn btn-ghost" id="login-cancel">로그인 없이 보기</button>
     </form>
+  </dialog>
+
+  <!-- 사업부 관리 -->
+  <dialog id="div-dialog" class="div-dialog">
+    <div class="modal-head">
+      <h2>사업부/서비스 관리</h2>
+      <button type="button" class="btn btn-ghost btn-sm" data-close aria-label="닫기">✕</button>
+    </div>
+    <div class="div-body">
+      <ul class="div-list" id="div-list"></ul>
+      <form id="div-form" class="div-form">
+        <label>새 사업부 이름<input id="div-name" maxlength="30" placeholder="예: EAI" autocomplete="off" /></label>
+        <fieldset class="div-icons"><legend>아이콘</legend><div id="div-icons"></div></fieldset>
+        <p class="login-error" id="div-error" role="alert" hidden></p>
+        <button type="submit" class="btn btn-primary">추가</button>
+      </form>
+    </div>
   </dialog>
 
   <dialog id="confirm" class="confirm">

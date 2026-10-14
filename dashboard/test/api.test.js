@@ -74,7 +74,7 @@ test('처음 읽을 때 한 번만 처음 데이터를 넣는다', async () => {
   await h(req('/api/doc/items/c1', {method: 'DELETE'}));
   await h(req('/api/doc/blogStats/s-connect-2026-09', {method: 'DELETE'}));
   data = await (await h(req('/api/data'))).json();
-  assert.deepEqual(data, {items: [], blogStats: []});
+  assert.deepEqual(data, {items: [], blogStats: [], settings: []});
 });
 
 test('이미 데이터가 있으면 처음 데이터를 덮어쓰지 않는다', async () => {
@@ -92,6 +92,15 @@ test('문서 저장·수정·삭제', async () => {
   assert.equal((await h(req('/api/doc/items/c1', {method: 'PUT', body: {id: 'c1', title: '수정'}}))).status, 200);
   const data = await (await h(req('/api/data'))).json();
   assert.deepEqual(data.items.map((i) => i.title).sort(), ['새 글', '수정']);
+});
+
+test('사업부 목록(settings) 저장', async () => {
+  const h = createHandler(memoryStore(), ENV, SEED);
+  const list = [{key: 'EAI', icon: '🔗'}];
+  assert.equal((await h(req('/api/doc/settings/divisions', {method: 'PUT', body: {id: 'divisions', list}}))).status, 200);
+  const data = await (await h(req('/api/data', {auth: null}))).json();
+  assert.deepEqual(data.settings, [{id: 'divisions', list}]);
+  assert.equal((await h(req('/api/doc/settings/divisions', {method: 'PUT', auth: null, body: {id: 'divisions', list: []}}))).status, 401);
 });
 
 test('잘못된 요청은 거부한다', async () => {

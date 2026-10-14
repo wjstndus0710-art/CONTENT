@@ -3,7 +3,7 @@
 import {createHash, timingSafeEqual} from 'node:crypto';
 import seedData from '../../data/seed.mjs';
 
-const COLLECTIONS = ['items', 'blogStats'];
+const COLLECTIONS = ['items', 'blogStats', 'settings'];
 const ID = /^[A-Za-z0-9_.:@+~-]{1,100}$/;
 const MAX_DOC = 64 * 1024;
 
@@ -42,8 +42,8 @@ export function createHandler(store, env, seed = seedData) {
     if (url.pathname === '/api/data' && req.method === 'GET') {
       try {
         await ensureSeeded();
-        const [items, blogStats] = await Promise.all(COLLECTIONS.map(readCollection));
-        return json(200, {items, blogStats});
+        const [items, blogStats, settings] = await Promise.all(COLLECTIONS.map(readCollection));
+        return json(200, {items, blogStats, settings});
       } catch {
         return json(500, {error: '데이터를 불러오지 못했습니다.'});
       }

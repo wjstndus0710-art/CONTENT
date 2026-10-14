@@ -363,6 +363,23 @@ dialog.confirm { width: min(420px, calc(100vw - 32px)); }
 .login .btn-primary { justify-content: center; padding: 11px; border-radius: 12px; }
 dialog.login::backdrop { background: rgba(0, 23, 51, 0.3); }
 .login #login-cancel { justify-content: center; }
+.div-dialog { width: min(460px, calc(100vw - 32px)); }
+.div-body { padding: 8px 20px 20px; display: flex; flex-direction: column; gap: 16px; }
+.div-list { list-style: none; margin: 0; padding: 0; max-height: 40vh; overflow-y: auto; }
+.div-list li { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; padding: 8px 4px; border-bottom: 1px solid var(--border); }
+.div-list .div-name { font-weight: 600; }
+.div-list button[disabled] { opacity: 0.35; cursor: not-allowed; }
+.div-form { display: flex; flex-direction: column; gap: 10px; background: var(--card); border-radius: 14px; padding: 14px; }
+.div-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-2); }
+.div-form input#div-name { padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); font-size: 14px; }
+.div-icons { border: 0; margin: 0; padding: 0; }
+.div-icons legend { font-size: 12px; color: var(--text-2); padding: 0; margin-bottom: 6px; }
+#div-icons { display: flex; flex-wrap: wrap; gap: 6px; }
+.icon-pick { position: relative; }
+.icon-pick input { position: absolute; opacity: 0; inset: 0; }
+.icon-pick span { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; height: 36px; padding: 0 8px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); cursor: pointer; font-size: 16px; }
+.icon-pick input:checked + span { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.icon-pick input:focus-visible + span { outline: 2px solid var(--accent); }
 .head-actions { display: flex; gap: 8px; align-items: center; }
 /* 보기 전용: 수정용 버튼을 숨기고 상태 칩·제목을 일반 글자처럼 보이게 한다 */
 .read-only [data-edit-only] { display: none !important; }
@@ -524,3 +541,4 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
   .strip-title { flex-basis: 100%; border: 0; }
 }
 .blog-subs .delta { align-self: flex-start; }
+.div-form .btn-primary { justify-content: center; padding: 10px; border-radius: 12px; }

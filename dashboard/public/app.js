@@ -6,15 +6,26 @@
 
   // ---------- 설정 ----------
   const STORAGE_KEY = 'content-dashboard:v2';
-  // 시트의 드롭다운 순서 그대로. 색은 이 순서대로 고정 배정한다.
-  const DIVISIONS = [
+  // 기본 사업부: 시트의 드롭다운 순서 + EAI. ‘사업부 관리’에서 바꾸면 settings/divisions 문서에 목록 전체를 저장한다.
+  const BASE_DIVISIONS = [
     { key: 'Rtail-X', icon: '📦' },
     { key: 'EDI', icon: '📁' },
     { key: 'SIEM', icon: '🔐' },
     { key: '뉴스레터', icon: '📩' },
     { key: 'Auto-X', icon: '🚕' },
     { key: 'xCON', icon: '📋' },
+    { key: 'EAI', icon: '🔗' },
   ];
+  const SETTINGS_KEY = 'content-dashboard:v2:settings';
+  const normSetting = (r) => ({
+    id: String(r.id || ''),
+    list: (Array.isArray(r.list) ? r.list : []).map((d) => ({ key: String(d.key || '').trim(), icon: String(d.icon || '') })).filter((d) => d.key),
+  });
+  let settings = (() => { try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '[]').map(normSetting); } catch (e) { return []; } })();
+  function divisionsList() {
+    const doc = settings.find((d) => d.id === 'divisions');
+    return doc && doc.list.length ? doc.list : BASE_DIVISIONS;
+  }
   const CHANNELS = ['네이버', '홈페이지', '티스토리', '카카오', '인스타'];
   const CORE = ['네이버', '홈페이지', '티스토리', '카카오']; // 시트 진행률 = COUNTIF(H:K,"발행완료")/4
   const STATUSES = [
@@ -78,7 +89,7 @@
   const sameMonth = (d, m) => d && d.getFullYear() === m.getFullYear() && d.getMonth() === m.getMonth();
   const DOW = ['일', '월', '화', '수', '목', '금', '토'];
 
-  const divInfo = (key) => DIVISIONS.find((d) => d.key === key) || { key, icon: '' };
+  const divInfo = (key) => divisionsList().find((d) => d.key === key) || { key, icon: '' };
   // 색을 줄이기 위해 사업부는 색 대신 아이콘과 이름으로 구분한다.
   const divColor = () => 'var(--g2)';
   const divLabel = (key) => (key ? `${divInfo(key).icon} ${key}`.trim() : '–');
@@ -118,7 +129,7 @@
   function normDivision(v) {
     const s = String(v || '').replace(/^[^\p{L}\p{N}]+/u, '').trim(); // 앞의 이모지 제거
     if (!s) return '';
-    const hit = DIVISIONS.find((d) => d.key.toLowerCase() === s.toLowerCase());
+    const hit = divisionsList().find((d) => d.key.toLowerCase() === s.toLowerCase());
     return hit ? hit.key : s;
   }
   function normStatus(v) {
@@ -195,8 +206,9 @@
   }
   const uniq = (vals) => [...new Set(vals.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
   function allDivisions() {
-    const extra = uniq(items.map((i) => i.division)).filter((k) => !DIVISIONS.some((d) => d.key === k));
-    return [...DIVISIONS.map((d) => d.key), ...extra];
+    const list = divisionsList();
+    const extra = uniq(items.map((i) => i.division)).filter((k) => !list.some((d) => d.key === k));
+    return [...list.map((d) => d.key), ...extra];
   }
   function refreshFilterOptions() {
     const fill = (sel, values, label, show = (v) => v) => {
@@ -205,6 +217,7 @@
       el.value = values.includes(cur) ? cur : '';
     };
     fill('#f-division', allDivisions(), '모든 사업부/서비스', divLabel);
+    if (canEdit()) $('#f-division').insertAdjacentHTML('beforeend', '<option value="__add__">+ 사업부 추가…</option>');
     fill('#f-source', uniq(items.map((i) => i.sourceChannel)), '모든 원문 채널');
     fill('#f-owner', uniq(items.map((i) => i.owner)), '모든 담당자');
     $('#dl-owner').innerHTML = uniq(items.map((i) => i.owner)).map((v) => `<option value="${esc(v)}">`).join('');
@@ -577,8 +590,8 @@
     ui.editingId = it ? it.id : null;
     $('#editor-title').textContent = it ? '콘텐츠 편집' : '새 콘텐츠';
     $('#btn-delete').hidden = !it;
-    form.division.innerHTML = allDivisions().map((k) => `<option value="${esc(k)}">${esc(divLabel(k))}</option>`).join('');
-    const v = it || normalize({ division: $('#f-division').value || DIVISIONS[1].key, owner: items[0]?.owner || '', channels: Object.fromEntries(CHANNELS.map((c) => [c, '미작성'])), ...preset });
+    form.division.innerHTML = allDivisions().map((k) => `<option value="${esc(k)}">${esc(divLabel(k))}</option>`).join('') + '<option value="__add__">+ 사업부 추가…</option>';
+    const v = it || normalize({ division: $('#f-division').value || divisionsList()[0].key, owner: items[0]?.owner || '', channels: Object.fromEntries(CHANNELS.map((c) => [c, '미작성'])), ...preset });
     ['division', 'title', 'mainKeyword', 'naver', 'subKeywords', 'sourceChannel', 'publishDate', 'owner', 'notes'].forEach((k) => { form[k].value = v[k] || ''; });
     CHANNELS.forEach((c) => { form['ch:' + c].value = v.channels[c] || ''; });
     dlg.showModal();
@@ -1184,12 +1197,97 @@
     clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 2200);
   }
 
+  // ---------- 사업부 관리 ----------
+  const DIV_ICONS = ['🔗', '🧩', '☁️', '🛒', '🏭', '💳', '🛡️', '📊', '🚚', '🏷️', '📌', '⚙️'];
+  let divReturn = null; // 콘텐츠 편집 창에서 열었으면 추가한 사업부를 그 창에 선택해 준다
+  function saveSettings() {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* 무시 */ }
+    pushCollection('settings', settings);
+  }
+  function setDivisions(list) {
+    settings = settings.filter((d) => d.id !== 'divisions').concat([{ id: 'divisions', list }]);
+    saveSettings();
+  }
+  function renderDivisionManager() {
+    const counts = {};
+    items.forEach((i) => { counts[i.division] = (counts[i.division] || 0) + 1; });
+    $('#div-list').innerHTML = divisionsList().map((d) => {
+      const n = counts[d.key] || 0;
+      return `<li><span class="div-name">${esc(d.icon)} ${esc(d.key)}</span><span class="muted">콘텐츠 ${n}건</span>
+        <button type="button" class="btn btn-ghost btn-sm" data-del-div="${esc(d.key)}" ${n ? `disabled title="이 사업부를 쓰는 콘텐츠 ${n}건이 있어 삭제할 수 없습니다"` : ''}>삭제</button></li>`;
+    }).join('');
+  }
+  function openDivisions(returnSelect = null) {
+    if (!canEdit()) return viewOnlyNotice();
+    divReturn = returnSelect;
+    $('#div-icons').innerHTML = DIV_ICONS.map((ic, i) => `<label class="icon-pick"><input type="radio" name="icon" value="${ic}" ${i === 0 ? 'checked' : ''} /><span>${ic}</span></label>`).join('')
+      + '<label class="icon-pick"><input type="radio" name="icon" value="" /><span class="muted">없음</span></label>';
+    $('#div-name').value = '';
+    $('#div-error').hidden = true;
+    renderDivisionManager();
+    $('#div-dialog').showModal();
+    setTimeout(() => $('#div-name').focus(), 30);
+  }
+  $('#div-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = $('#div-name').value.trim();
+    const icon = (new FormData(e.target).get('icon') || '').toString();
+    const err = $('#div-error');
+    const fail = (m) => { err.textContent = m; err.hidden = false; $('#div-name').focus(); };
+    if (!name) return fail('사업부 이름을 입력하세요.');
+    if (!/^[\p{L}\p{N}]/u.test(name)) return fail('이름은 글자나 숫자로 시작해야 합니다.');
+    if (name.length > 30) return fail('이름은 30자 이내로 입력하세요.');
+    if (allDivisions().some((k) => k.toLowerCase() === name.toLowerCase())) return fail(`‘${name}’은(는) 이미 있습니다.`);
+    setDivisions([...divisionsList(), { key: name, icon }]);
+    render();
+    toast(`사업부 ‘${name}’을(를) 추가했습니다.`);
+    if (divReturn) {
+      const sel = divReturn; divReturn = null;
+      sel.innerHTML = allDivisions().map((k) => `<option value="${esc(k)}">${esc(divLabel(k))}</option>`).join('') + '<option value="__add__">+ 사업부 추가…</option>';
+      sel.value = name;
+      $('#div-dialog').close();
+      return;
+    }
+    $('#div-name').value = '';
+    err.hidden = true;
+    renderDivisionManager();
+  });
+  $('#div-list').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-del-div]');
+    if (!b || b.disabled) return;
+    const key = b.dataset.delDiv;
+    if (!(await ask(`사업부 ‘${key}’을(를) 목록에서 삭제할까요?`, '삭제'))) return;
+    setDivisions(divisionsList().filter((d) => d.key !== key));
+    if ($('#f-division').value === key) $('#f-division').value = '';
+    render(); renderDivisionManager();
+    toast(`사업부 ‘${key}’을(를) 삭제했습니다.`);
+  });
+  $$('[data-close]', $('#div-dialog')).forEach((b) => b.addEventListener('click', () => { divReturn = null; $('#div-dialog').close(); }));
+  actions['manage-divisions'] = () => openDivisions();
+  // 필터와 편집 창의 ‘+ 사업부 추가…’
+  let lastDivFilter = '';
+  $('#f-division').addEventListener('change', (e) => {
+    if (e.target.value === '__add__') { e.stopImmediatePropagation(); e.target.value = lastDivFilter; openDivisions(); return; }
+    lastDivFilter = e.target.value;
+  }, true);
+  let lastEditorDiv = '';
+  form.division.addEventListener('focus', () => { lastEditorDiv = form.division.value; });
+  form.division.addEventListener('change', () => {
+    if (form.division.value === '__add__') { form.division.value = lastEditorDiv; openDivisions(form.division); }
+    else lastEditorDiv = form.division.value;
+  });
+
   // ---------- 서버 저장 ----------
   // claude.ai 링크에서 열면 서버 저장소(db)에 저장하고, 파일로 열면 이 브라우저(localStorage)에만 저장한다.
   // 화면은 브라우저 캐시로 바로 그린 뒤 서버 데이터가 오면 다시 그린다.
   function useCap(name) { return window.claude && typeof window.claude.use === 'function' ? window.claude.use(name).catch(() => null) : Promise.resolve(null); }
-  const NORMALIZERS = { items: (r) => normalize(r), blogStats: (r) => normStat(r) };
-  const synced = { items: null, blogStats: null }; // id → 서버에 있는 JSON. null이면 아직 서버 상태를 모름
+  const NORMALIZERS = { items: (r) => normalize(r), blogStats: (r) => normStat(r), settings: (r) => normSetting(r) };
+  const COLLS = {
+    items: { get: () => items, set: (r) => { items = r; }, key: STORAGE_KEY },
+    blogStats: { get: () => stats, set: (r) => { stats = r; }, key: STATS_KEY },
+    settings: { get: () => settings, set: (r) => { settings = r; }, key: SETTINGS_KEY },
+  };
+  const synced = { items: null, blogStats: null, settings: null }; // id → 서버에 있는 JSON. null이면 아직 서버 상태를 모름
   let writeChain = Promise.resolve();
 
   function pushCollection(name, list) {
@@ -1234,10 +1332,10 @@
       synced[name] = new Map(rows.map((r) => [r.id, JSON.stringify(r)]));
       if (first && !rows.length) {
         // 서버가 비어 있으면 이 브라우저에 있던 데이터를 올린다.
-        pushCollection(name, name === 'items' ? items : stats);
+        pushCollection(name, COLLS[name].get());
       } else {
-        if (name === 'items') items = rows; else stats = rows;
-        try { localStorage.setItem(name === 'items' ? STORAGE_KEY : STATS_KEY, JSON.stringify(rows)); } catch (e) { /* 캐시 실패는 무시 */ }
+        COLLS[name].set(rows);
+        try { localStorage.setItem(COLLS[name].key, JSON.stringify(rows)); } catch (e) { /* 캐시 실패는 무시 */ }
       }
       if (first) { cloud.connecting = Object.values(synced).some((v) => !v); setSync(); }
       render();
@@ -1299,7 +1397,7 @@
 
   // Netlify API를 db 저장소와 같은 모양(collection/doc/onSnapshot)으로 감싼다. 실시간 대신 화면으로 돌아올 때 다시 읽는다.
   function netlifyDb() {
-    const subs = { items: [], blogStats: [] };
+    const subs = { items: [], blogStats: [], settings: [] };
     let loading = null, scheduled = false;
     const fail = (res) => {
       if (res && res.status === 401) {
@@ -1347,6 +1445,7 @@
     applyEditMode();
     subscribe('items');
     subscribe('blogStats');
+    subscribe('settings');
   }
 
   async function connectCloud() {
@@ -1371,6 +1470,7 @@
     cloud.db = db;
     subscribe('items');
     subscribe('blogStats');
+    subscribe('settings');
   }
 
   let resizeTimer, lastW = innerWidth;
