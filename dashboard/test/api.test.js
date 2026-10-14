@@ -25,9 +25,24 @@ const req = (path, {method = 'GET', auth = AUTH, body, headers = {}} = {}) => ne
   body: body !== undefined ? JSON.stringify(body) : undefined,
 });
 
-test('APP_PASSWORD가 없거나 짧으면 503', async () => {
-  const h = createHandler(memoryStore(), {APP_PASSWORD: 'short'}, SEED);
-  assert.equal((await h(req('/api/session'))).status, 503);
+test('APP_PASSWORD가 없거나 짧으면 503과 원인을 알려 준다', async () => {
+  let r = await createHandler(memoryStore(), {APP_PASSWORD: 'short'}, SEED)(req('/api/session'));
+  assert.equal(r.status, 503);
+  assert.match((await r.json()).error, /5자/);
+  r = await createHandler(memoryStore(), {}, SEED)(req('/api/session'));
+  assert.equal(r.status, 503);
+  assert.match((await r.json()).error, /찾지 못했습니다/);
+});
+
+test('환경 변수를 넘기지 않으면 Netlify.env, 그다음 process.env를 읽는다', async () => {
+  globalThis.Netlify = {env: {get: (k) => ({APP_USER: 'me', APP_PASSWORD: 'correct-horse-battery'})[k]}};
+  try {
+    assert.equal((await createHandler(memoryStore(), undefined, SEED)(req('/api/session'))).status, 200);
+  } finally { delete globalThis.Netlify; }
+  process.env.APP_USER = 'me'; process.env.APP_PASSWORD = 'correct-horse-battery';
+  try {
+    assert.equal((await createHandler(memoryStore(), undefined, SEED)(req('/api/session'))).status, 200);
+  } finally { delete process.env.APP_USER; delete process.env.APP_PASSWORD; }
 });
 
 test('읽기와 쓰기 모두 로그인이 필요하다', async () => {

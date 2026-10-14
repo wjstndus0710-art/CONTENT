@@ -13,7 +13,13 @@ const json = (status, value) => new Response(JSON.stringify(value), {
 const digest = (value) => createHash('sha256').update(value).digest();
 
 // store: {keys(prefix), get(key), set(key, value), delete(key)} — Netlify Blobs in production, a Map in tests.
-export function createHandler(store, env = process.env, seed = seedData) {
+// Netlify 런타임의 환경 변수(Netlify.env)를 우선 읽고, 없으면 process.env를 쓴다.
+const runtimeEnv = () => {
+  const get = (k) => globalThis.Netlify?.env?.get?.(k) ?? process.env[k];
+  return {APP_USER: get('APP_USER'), APP_PASSWORD: get('APP_PASSWORD')};
+};
+
+export function createHandler(store, env, seed = seedData) {
   const readCollection = async (name) => {
     const keys = await store.keys(name + '/');
     return (await Promise.all(keys.map((k) => store.get(k)))).filter(Boolean);
@@ -28,11 +34,16 @@ export function createHandler(store, env = process.env, seed = seedData) {
     await store.set('meta/seeded', {at: new Date().toISOString()});
   };
 
+  const fixedEnv = env;
   return async (req) => {
     const url = new URL(req.url);
+    env = fixedEnv || runtimeEnv();
     const password = env.APP_PASSWORD, username = env.APP_USER || 'admin';
-    if (typeof password !== 'string' || password.length < 12) {
-      return json(503, {error: 'Netlify 환경 변수 APP_PASSWORD(12자 이상)를 설정한 뒤 다시 배포해 주세요.'});
+    if (typeof password !== 'string' || !password) {
+      return json(503, {error: '서버에서 환경 변수 APP_PASSWORD를 찾지 못했습니다. 이름(대문자·밑줄)과 적용 범위(Functions 포함)를 확인한 뒤 다시 배포해 주세요.'});
+    }
+    if (password.length < 12) {
+      return json(503, {error: `APP_PASSWORD가 ${password.length}자입니다. 12자 이상으로 바꾼 뒤 다시 배포해 주세요.`});
     }
     const header = req.headers.get('authorization') || '';
     const supplied = header.startsWith('Basic ') ? Buffer.from(header.slice(6), 'base64').toString('utf8') : '';
