@@ -31,6 +31,7 @@
         <button data-action="import-json">백업 불러오기</button>
         <button data-action="load-seed">처음 데이터로 되돌리기</button>
         <button data-action="clear-all">전체 삭제</button>
+        <button data-action="logout" id="btn-logout" hidden>로그아웃</button>
       </div>
     </nav>
     <button class="theme-btn" id="btn-theme" aria-label="테마 전환">◐ 라이트 / 다크</button>
@@ -285,6 +286,19 @@
     </form>
   </dialog>
 
+  <!-- Netlify 버전 로그인 -->
+  <dialog id="login" class="login">
+    <form id="login-form">
+      <div class="login-brand"><span class="brand-mark" aria-hidden="true">◆</span> 콘텐츠 운영관리</div>
+      <p class="login-desc" id="login-desc">Netlify에 설정한 아이디와 비밀번호로 로그인하세요.</p>
+      <label>아이디<input name="user" id="login-user" autocomplete="username" required /></label>
+      <label>비밀번호<input type="password" name="password" id="login-password" autocomplete="current-password" required /></label>
+      <label class="login-remember"><input type="checkbox" name="remember" id="login-remember" /> 이 기기에서 로그인 유지</label>
+      <p class="login-error" id="login-error" role="alert" hidden></p>
+      <button type="submit" class="btn btn-primary">로그인</button>
+    </form>
+  </dialog>
+
   <dialog id="confirm" class="confirm">
     <form method="dialog">
       <p id="confirm-msg"></p>
@@ -303,8 +317,6 @@
   <div class="tooltip" id="tooltip" role="tooltip" hidden></div>
   <div class="toast" id="toast" hidden></div>
 
-  <script src="seed.js"></script>
-  <script src="seed-blog.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

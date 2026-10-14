@@ -149,7 +149,7 @@
   }
 
   // ---------- 상태 ----------
-  const cloud = { db: null, connecting: false, pending: 0, error: '' };
+  const cloud = { db: null, mode: 'local', auth: '', connecting: false, pending: 0, error: '' };
   let items = load();
   const ui = {
     view: 'dashboard',
@@ -1204,7 +1204,7 @@
     else if (cloud.db) { cls = 'ok'; txt = '서버에 저장됨'; }
     el.className = 'sync ' + cls;
     el.textContent = txt;
-    el.title = cloud.db ? '어느 기기에서 열어도 같은 데이터가 보입니다. 이 링크의 데이터는 소유자만 볼 수 있습니다.' : '이 브라우저에만 저장됩니다. 다른 기기에서는 보이지 않으니 JSON 백업을 받아 두세요.';
+    el.title = cloud.db ? `어느 기기에서 열어도 같은 데이터가 보입니다. ${cloud.mode === 'netlify' ? '로그인한 사람만' : '이 링크의 소유자만'} 볼 수 있습니다.` : '이 브라우저에만 저장됩니다. 다른 기기에서는 보이지 않으니 JSON 백업을 받아 두세요.';
   }
   function subscribe(name) {
     cloud.db.collection(name).onSnapshot((snap) => {
@@ -1228,8 +1228,113 @@
       setSync();
     });
   }
+  // ---------- Netlify 버전: /api 함수 + 로그인 ----------
+  // 로그인 정보는 '로그인 유지'를 켜면 localStorage, 아니면 탭을 닫을 때까지 sessionStorage에 둔다.
+  const AUTH_KEY = STORAGE_KEY + ':auth';
+  const getAuth = () => { try { return sessionStorage.getItem(AUTH_KEY) || localStorage.getItem(AUTH_KEY) || ''; } catch (e) { return ''; } };
+  function setAuth(value, remember) {
+    try {
+      sessionStorage.removeItem(AUTH_KEY); localStorage.removeItem(AUTH_KEY);
+      if (value) (remember ? localStorage : sessionStorage).setItem(AUTH_KEY, value);
+    } catch (e) { /* 저장 실패 시 이번 화면에서만 로그인 */ }
+    cloud.auth = value;
+  }
+  const basic = (user, pass) => 'Basic ' + btoa(String.fromCharCode(...new TextEncoder().encode(user + ':' + pass)));
+  function api(path, opts = {}) {
+    return fetch(path, { ...opts, headers: { ...(opts.headers || {}), ...(cloud.auth ? { Authorization: cloud.auth } : {}) }, cache: 'no-store' });
+  }
+  function askLogin(message) {
+    const box = $('#login');
+    $('#login-desc').textContent = message || 'Netlify에 설정한 아이디와 비밀번호로 로그인하세요.';
+    $('#login-error').hidden = true;
+    if (!box.open) box.showModal();
+    setTimeout(() => $('#login-user').focus(), 30);
+  }
+  $('#login').addEventListener('cancel', (e) => e.preventDefault()); // 로그인 전에는 닫을 수 없다
+  $('#login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = e.target, err = $('#login-error');
+    const auth = basic(f.user.value.trim(), f.password.value);
+    let res;
+    try { res = await fetch('/api/session', { headers: { Authorization: auth }, cache: 'no-store' }); } catch (x) { res = null; }
+    if (!res || !res.ok) {
+      err.textContent = !res ? '서버에 연결하지 못했습니다. 잠시 후 다시 시도하세요.' : res.status === 401 ? '아이디 또는 비밀번호가 맞지 않습니다.' : (await res.json().catch(() => ({}))).error || '로그인하지 못했습니다.';
+      err.hidden = false;
+      return;
+    }
+    setAuth(auth, f.remember.checked);
+    f.password.value = '';
+    $('#login').close();
+    if (!cloud.db) startNetlify(); else cloud.db.refresh();
+  });
+  actions.logout = () => {
+    setAuth('', false);
+    try { [STORAGE_KEY, STATS_KEY].forEach((k) => localStorage.removeItem(k)); } catch (e) { /* 무시 */ }
+    location.reload();
+  };
+
+  // Netlify API를 db 저장소와 같은 모양(collection/doc/onSnapshot)으로 감싼다. 실시간 대신 화면으로 돌아올 때 다시 읽는다.
+  function netlifyDb() {
+    const subs = { items: [], blogStats: [] };
+    let loading = null, scheduled = false;
+    const fail = (res) => {
+      if (res && res.status === 401) { askLogin('로그인이 만료되었습니다. 다시 로그인하세요.'); return { code: 'unauthenticated' }; }
+      return { code: 'unavailable' };
+    };
+    const load = () => (loading ||= api('/api/data')
+      .then((r) => (r.ok ? r.json() : Promise.reject(fail(r))))
+      .finally(() => { loading = null; }));
+    async function deliver() {
+      let data;
+      try { data = await load(); } catch (e) { cloud.error = e.code === 'unauthenticated' ? '' : '서버에서 데이터를 불러오지 못했습니다. 새로고침하세요.'; setSync(); return; }
+      cloud.error = '';
+      Object.entries(subs).forEach(([name, fns]) => {
+        const docs = (data[name] || []).map((d) => ({ id: d.id, exists: true, data: () => d }));
+        fns.forEach((next) => next({ docs, size: docs.length, empty: !docs.length, metadata: { fromCache: false, hasPendingWrites: false } }));
+      });
+    }
+    async function write(method, name, id, body) {
+      const r = await api(`/api/doc/${name}/${encodeURIComponent(id)}`, {
+        method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined,
+      }).catch(() => null);
+      if (!r || !r.ok) throw fail(r);
+    }
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && !cloud.pending) deliver(); });
+    return {
+      refresh: deliver,
+      collection: (name) => ({
+        doc: (id) => ({ set: (body) => write('PUT', name, id, body), delete: () => write('DELETE', name, id) }),
+        onSnapshot: (next) => {
+          subs[name].push(next);
+          if (!scheduled) { scheduled = true; Promise.resolve().then(() => { scheduled = false; deliver(); }); }
+          return () => {};
+        },
+      }),
+    };
+  }
+  function startNetlify() {
+    cloud.mode = 'netlify';
+    cloud.db = netlifyDb();
+    $('#btn-logout').hidden = false;
+    subscribe('items');
+    subscribe('blogStats');
+  }
+
   async function connectCloud() {
-    if (!window.claude) { setSync(); return; }
+    if (!window.claude) {
+      // claude.ai 밖: Netlify 함수가 있으면 서버 저장, 없으면(파일로 열기 등) 이 브라우저에만 저장
+      if (!/^https?:$/.test(location.protocol)) { setSync(); return; }
+      cloud.auth = getAuth();
+      cloud.connecting = true; setSync();
+      let res = null;
+      try { res = await api('/api/session'); } catch (e) { res = null; }
+      if (!res || res.status === 404) { cloud.connecting = false; setSync(); return; }
+      if (res.ok) { startNetlify(); return; }
+      if (res.status === 401) { setAuth('', false); askLogin(); return; }
+      const msg = (await res.json().catch(() => ({}))).error || '서버 설정을 확인하세요.';
+      askLogin(msg);
+      return;
+    }
     cloud.connecting = true; setSync();
     const db = await useCap('db');
     if (!db) { cloud.connecting = false; setSync(); return; }
