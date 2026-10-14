@@ -24,13 +24,13 @@
       <button class="tab" data-view="blog" role="tab"><span>↗</span> 블로그 성과</button>
       <div class="nav-section">데이터 관리</div>
       <div class="nav-sub" id="menu-data">
-        <button data-action="import-file">엑셀/CSV 가져오기</button>
-        <button data-action="import-stats">블로그 통계 가져오기</button>
+        <button data-action="import-file" data-edit-only>엑셀/CSV 가져오기</button>
+        <button data-action="import-stats" data-edit-only>블로그 통계 가져오기</button>
         <button data-action="export-csv">CSV 내보내기</button>
-        <button data-action="export-json">백업 저장 (JSON)</button>
-        <button data-action="import-json">백업 불러오기</button>
-        <button data-action="load-seed">처음 데이터로 되돌리기</button>
-        <button data-action="clear-all">전체 삭제</button>
+        <button data-action="export-json" data-edit-only>백업 저장 (JSON)</button>
+        <button data-action="import-json" data-edit-only>백업 불러오기</button>
+        <button data-action="load-seed" data-edit-only>처음 데이터로 되돌리기</button>
+        <button data-action="clear-all" data-edit-only>전체 삭제</button>
         <button data-action="logout" id="btn-logout" hidden>로그아웃</button>
       </div>
     </nav>
@@ -43,7 +43,10 @@
         <div class="greet"><b>26_멀티채널 콘텐츠 운영관리</b></div>
         <div class="muted" id="today-label"></div>
       </div>
-      <button class="btn btn-primary" id="btn-add">+ 새 콘텐츠</button>
+      <div class="head-actions">
+        <button class="btn" id="btn-login" hidden>로그인</button>
+        <button class="btn btn-primary" id="btn-add" data-edit-only>+ 새 콘텐츠</button>
+      </div>
     </header>
 
     <section class="filters" aria-label="필터">
@@ -180,7 +183,7 @@
           </div>
           <span class="spacer"></span>
           <select id="stats-month" class="select-month" aria-label="기준 월"></select>
-          <button class="btn btn-primary" id="btn-add-stat">+ 월 통계 입력</button>
+          <button class="btn btn-primary" id="btn-add-stat" data-edit-only>+ 월 통계 입력</button>
         </div>
         <div class="hero" id="blog-cards"></div>
         <article class="card grid-1">
@@ -296,6 +299,7 @@
       <label class="login-remember"><input type="checkbox" name="remember" id="login-remember" /> 이 기기에서 로그인 유지</label>
       <p class="login-error" id="login-error" role="alert" hidden></p>
       <button type="submit" class="btn btn-primary">로그인</button>
+      <button type="button" class="btn btn-ghost" id="login-cancel">로그인 없이 보기</button>
     </form>
   </dialog>
 

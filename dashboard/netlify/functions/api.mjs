@@ -1,5 +1,5 @@
 // 콘텐츠 대시보드 API (Netlify Functions + Netlify Blobs).
-// 혼자 쓰는 대시보드라 읽기와 쓰기 모두 로그인(APP_USER / APP_PASSWORD)이 필요하다.
+// 읽기(GET /api/data)는 누구나, 추가·수정·삭제는 로그인(APP_USER / APP_PASSWORD)한 사람만 할 수 있다.
 import {createHash, timingSafeEqual} from 'node:crypto';
 import seedData from '../../data/seed.mjs';
 
@@ -38,6 +38,16 @@ export function createHandler(store, env, seed = seedData) {
   return async (req) => {
     const url = new URL(req.url);
     env = fixedEnv || runtimeEnv();
+    // 읽기는 로그인 없이 허용한다(보기 전용).
+    if (url.pathname === '/api/data' && req.method === 'GET') {
+      try {
+        await ensureSeeded();
+        const [items, blogStats] = await Promise.all(COLLECTIONS.map(readCollection));
+        return json(200, {items, blogStats});
+      } catch {
+        return json(500, {error: '데이터를 불러오지 못했습니다.'});
+      }
+    }
     const password = env.APP_PASSWORD, username = env.APP_USER || 'admin';
     if (typeof password !== 'string' || !password) {
       return json(503, {error: '서버에서 환경 변수 APP_PASSWORD를 찾지 못했습니다. 이름(대문자·밑줄)과 적용 범위(Functions 포함)를 확인한 뒤 다시 배포해 주세요.'});
@@ -51,11 +61,6 @@ export function createHandler(store, env, seed = seedData) {
 
     try {
       if (url.pathname === '/api/session' && req.method === 'GET') return json(200, {ok: true});
-      if (url.pathname === '/api/data' && req.method === 'GET') {
-        await ensureSeeded();
-        const [items, blogStats] = await Promise.all(COLLECTIONS.map(readCollection));
-        return json(200, {items, blogStats});
-      }
       const m = url.pathname.match(/^\/api\/doc\/([^/]+)\/([^/]+)$/);
       if (m && (req.method === 'PUT' || req.method === 'DELETE')) {
         const [, col, rawId] = m;

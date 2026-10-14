@@ -149,7 +149,16 @@
   }
 
   // ---------- 상태 ----------
-  const cloud = { db: null, mode: 'local', auth: '', connecting: false, pending: 0, error: '' };
+  const cloud = { db: null, mode: 'local', auth: '', authed: false, connecting: false, pending: 0, error: '' };
+  // Netlify 사이트에서 로그인하지 않았으면 보기 전용. claude.ai 링크와 파일 열기는 항상 수정 가능.
+  const canEdit = () => cloud.mode !== 'netlify' || cloud.authed;
+  function viewOnlyNotice() { toast('보기 전용입니다. 오른쪽 위 ‘로그인’을 누르면 수정할 수 있어요.'); }
+  function applyEditMode() {
+    document.body.classList.toggle('read-only', !canEdit());
+    const net = cloud.mode === 'netlify';
+    $('#btn-login').hidden = !net || cloud.authed;
+    $('#btn-logout').hidden = !net || !cloud.authed;
+  }
   let items = load();
   const ui = {
     view: 'dashboard',
@@ -243,7 +252,7 @@
           <div><span>작성·검수·예약</span><b>${fmt(cWip)}</b></div>
           <div><span>미작성·빈칸</span><b>${fmt(cTodo)}</b></div>
         </div>
-        <button class="hero-btn" data-add>새 콘텐츠 등록하기</button>
+        <button class="hero-btn" data-add data-edit-only>새 콘텐츠 등록하기</button>
       </div>`;
 
     $('#strip').innerHTML = `<span class="strip-title">채널별 완료율</span>` + CHANNELS.map((c) => {
@@ -330,7 +339,7 @@
       <button class="promo-btn" data-id="${pick.id}">열어 보기</button>` : `
       <div class="promo-kicker">CONTENT</div>
       <div class="promo-title">발행일이 입력된 콘텐츠가 없어요</div>
-      <button class="promo-btn" data-add>콘텐츠 등록하기</button>`;
+      <button class="promo-btn" data-add data-edit-only>콘텐츠 등록하기</button>`;
 
     // 채널 배포 할 일: 원문이 발행된 콘텐츠 중 아직 발행완료가 아닌 채널 칸
     const todo = [];
@@ -563,6 +572,7 @@
     <label>${c}<select name="ch:${c}" id="e-ch-${c}"><option value="">(빈칸)</option>${STATUS_KEYS.map((s) => `<option>${s}</option>`).join('')}</select></label>`).join(''));
 
   function openEditor(id, preset = {}) {
+    if (!canEdit()) return viewOnlyNotice();
     const it = id ? items.find((i) => i.id === id) : null;
     ui.editingId = it ? it.id : null;
     $('#editor-title').textContent = it ? '콘텐츠 편집' : '새 콘텐츠';
@@ -600,6 +610,7 @@
 
   // 상태 칩: 미작성 → 작성중 → 검수중 → 예약 → 발행완료 → (빈칸) → 미작성 …
   function cycleChip(el) {
+    if (!canEdit()) return viewOnlyNotice();
     const it = items.find((i) => i.id === el.dataset.cid);
     if (!it) return;
     const ch = el.dataset.chip, cur = it.channels[ch];
@@ -827,7 +838,7 @@
     if (!stats.length) {
       $('#blog-cards').innerHTML = `<div class="card empty-card span-all"><b>아직 블로그 통계가 없습니다.</b>
         <p>「블로그 통계」 엑셀 파일을 왼쪽 메뉴의 ‘블로그 통계 가져오기’로 올리거나 월 통계를 직접 입력하세요.</p>
-        <button class="btn btn-primary" data-add-stat>+ 월 통계 입력</button></div>`;
+        <button class="btn btn-primary" data-add-stat data-edit-only>+ 월 통계 입력</button></div>`;
       ['#chart-trend', '#tops', '#period-table', '#trend-legend'].forEach((s) => { $(s).innerHTML = ''; });
       return;
     }
@@ -1019,6 +1030,7 @@
 
   const sdlg = $('#stat-editor'), sform = $('#stat-form');
   function openStat(id, preset = {}) {
+    if (!canEdit()) return viewOnlyNotice();
     const r = id ? stats.find((x) => x.id === id) : null;
     statsUi.editingId = r ? r.id : null;
     $('#stat-title').textContent = r ? `${r.blog} ${ymLabel(r.month, true)} 통계 수정` : '블로그 월 통계 입력';
@@ -1082,7 +1094,13 @@
   }
   $$('.tab').forEach((t) => t.addEventListener('click', () => setView(t.dataset.view)));
   $('#btn-add').addEventListener('click', () => openEditor(null));
-  $('#menu-data').addEventListener('click', (e) => { const a = e.target.closest('[data-action]'); if (a) actions[a.dataset.action](); });
+  const VIEW_ACTIONS = ['export-csv', 'logout'];
+  $('#menu-data').addEventListener('click', (e) => {
+    const a = e.target.closest('[data-action]');
+    if (!a) return;
+    if (!canEdit() && !VIEW_ACTIONS.includes(a.dataset.action)) return viewOnlyNotice();
+    actions[a.dataset.action]();
+  });
 
   ['#f-search', '#f-division', '#f-source', '#f-progress', '#f-owner', '#f-period']
     .forEach((s) => $(s).addEventListener(s === '#f-search' ? 'input' : 'change', render));
@@ -1176,7 +1194,7 @@
 
   function pushCollection(name, list) {
     const known = synced[name];
-    if (!cloud.db || !known) return;
+    if (!cloud.db || !known || !canEdit()) return;
     const now = new Map(list.map((r) => [r.id, JSON.stringify(r)]));
     now.forEach((json, id) => { if (known.get(id) !== json) { known.set(id, json); queueWrite(name, id, JSON.parse(json)); } });
     [...known.keys()].forEach((id) => { if (!now.has(id)) { known.delete(id); queueWrite(name, id, null); } });
@@ -1201,10 +1219,11 @@
     if (cloud.connecting) { cls = 'busy'; txt = '서버 연결 중…'; }
     else if (cloud.db && cloud.error) { cls = 'error'; txt = '⚠ 저장 실패 · 새로고침 필요'; }
     else if (cloud.db && cloud.pending) { cls = 'busy'; txt = `저장 중… (${cloud.pending})`; }
+    else if (cloud.db && !canEdit()) { cls = 'viewonly'; txt = '보기 전용 · 로그인하면 수정'; }
     else if (cloud.db) { cls = 'ok'; txt = '서버에 저장됨'; }
     el.className = 'sync ' + cls;
     el.textContent = txt;
-    el.title = cloud.db ? `어느 기기에서 열어도 같은 데이터가 보입니다. ${cloud.mode === 'netlify' ? '로그인한 사람만' : '이 링크의 소유자만'} 볼 수 있습니다.` : '이 브라우저에만 저장됩니다. 다른 기기에서는 보이지 않으니 JSON 백업을 받아 두세요.';
+    el.title = cloud.db ? `어느 기기에서 열어도 같은 데이터가 보입니다. ${cloud.mode === 'netlify' ? '주소를 아는 누구나 볼 수 있고, 로그인한 사람만 고칠 수' : '이 링크의 소유자만 볼 수'} 있습니다.` : '이 브라우저에만 저장됩니다. 다른 기기에서는 보이지 않으니 JSON 백업을 받아 두세요.';
   }
   function subscribe(name) {
     cloud.db.collection(name).onSnapshot((snap) => {
@@ -1245,12 +1264,13 @@
   }
   function askLogin(message) {
     const box = $('#login');
-    $('#login-desc').textContent = message || 'Netlify에 설정한 아이디와 비밀번호로 로그인하세요.';
+    $('#login-desc').textContent = message || cloud.setupError || '로그인하면 콘텐츠와 통계를 추가·수정할 수 있습니다.';
     $('#login-error').hidden = true;
     if (!box.open) box.showModal();
     setTimeout(() => $('#login-user').focus(), 30);
   }
-  $('#login').addEventListener('cancel', (e) => e.preventDefault()); // 로그인 전에는 닫을 수 없다
+  $('#login-cancel').addEventListener('click', () => $('#login').close());
+  $('#btn-login').addEventListener('click', () => askLogin());
   $('#login-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = e.target, err = $('#login-error');
@@ -1263,14 +1283,18 @@
       return;
     }
     setAuth(auth, f.remember.checked);
+    cloud.authed = true;
     f.password.value = '';
     $('#login').close();
+    applyEditMode(); setSync(); render();
     if (!cloud.db) startNetlify(); else cloud.db.refresh();
+    toast('로그인했습니다. 이제 수정할 수 있습니다.');
   });
   actions.logout = () => {
     setAuth('', false);
-    try { [STORAGE_KEY, STATS_KEY].forEach((k) => localStorage.removeItem(k)); } catch (e) { /* 무시 */ }
-    location.reload();
+    cloud.authed = false;
+    applyEditMode(); setSync(); render();
+    toast('로그아웃했습니다. 보기 전용으로 전환됩니다.');
   };
 
   // Netlify API를 db 저장소와 같은 모양(collection/doc/onSnapshot)으로 감싼다. 실시간 대신 화면으로 돌아올 때 다시 읽는다.
@@ -1278,7 +1302,12 @@
     const subs = { items: [], blogStats: [] };
     let loading = null, scheduled = false;
     const fail = (res) => {
-      if (res && res.status === 401) { askLogin('로그인이 만료되었습니다. 다시 로그인하세요.'); return { code: 'unauthenticated' }; }
+      if (res && res.status === 401) {
+        setAuth('', false); cloud.authed = false; applyEditMode(); render();
+        askLogin('로그인이 풀려 저장하지 못했습니다. 다시 로그인한 뒤 수정해 주세요.');
+        setTimeout(() => cloud.db && cloud.db.refresh(), 0); // 저장되지 않은 변경을 서버 내용으로 되돌린다
+        return { code: 'unauthenticated' };
+      }
       return { code: 'unavailable' };
     };
     const load = () => (loading ||= api('/api/data')
@@ -1315,7 +1344,7 @@
   function startNetlify() {
     cloud.mode = 'netlify';
     cloud.db = netlifyDb();
-    $('#btn-logout').hidden = false;
+    applyEditMode();
     subscribe('items');
     subscribe('blogStats');
   }
@@ -1329,10 +1358,11 @@
       let res = null;
       try { res = await api('/api/session'); } catch (e) { res = null; }
       if (!res || res.status === 404) { cloud.connecting = false; setSync(); return; }
-      if (res.ok) { startNetlify(); return; }
-      if (res.status === 401) { setAuth('', false); askLogin(); return; }
-      const msg = (await res.json().catch(() => ({}))).error || '서버 설정을 확인하세요.';
-      askLogin(msg);
+      // 로그인 상태면 수정 가능, 아니면(401·설정 없음) 보기 전용으로 연다.
+      if (res.ok) cloud.authed = true;
+      else if (res.status === 401) setAuth('', false);
+      else cloud.setupError = (await res.json().catch(() => ({}))).error || '';
+      startNetlify();
       return;
     }
     cloud.connecting = true; setSync();

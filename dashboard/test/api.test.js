@@ -45,12 +45,23 @@ test('환경 변수를 넘기지 않으면 Netlify.env, 그다음 process.env를
   } finally { delete process.env.APP_USER; delete process.env.APP_PASSWORD; }
 });
 
-test('읽기와 쓰기 모두 로그인이 필요하다', async () => {
+test('읽기는 로그인 없이, 쓰기는 로그인해야 한다', async () => {
   const h = createHandler(memoryStore(), ENV, SEED);
-  assert.equal((await h(req('/api/data', {auth: null}))).status, 401);
-  assert.equal((await h(req('/api/data', {auth: 'Basic ' + Buffer.from('me:wrong').toString('base64')}))).status, 401);
+  const r = await h(req('/api/data', {auth: null}));
+  assert.equal(r.status, 200);
+  assert.equal((await r.json()).items.length, 1);
   assert.equal((await h(req('/api/doc/items/c1', {method: 'DELETE', auth: null}))).status, 401);
+  assert.equal((await h(req('/api/doc/items/c9', {method: 'PUT', auth: null, body: {id: 'c9'}}))).status, 401);
+  const wrong = 'Basic ' + Buffer.from('me:wrong').toString('base64');
+  assert.equal((await h(req('/api/doc/items/c9', {method: 'PUT', auth: wrong, body: {id: 'c9'}}))).status, 401);
+  assert.equal((await h(req('/api/session', {auth: null}))).status, 401);
   assert.equal((await h(req('/api/session'))).status, 200);
+});
+
+test('비밀번호 설정이 없어도 보기는 된다', async () => {
+  const h = createHandler(memoryStore(), {}, SEED);
+  assert.equal((await h(req('/api/data', {auth: null}))).status, 200);
+  assert.equal((await h(req('/api/session'))).status, 503);
 });
 
 test('처음 읽을 때 한 번만 처음 데이터를 넣는다', async () => {

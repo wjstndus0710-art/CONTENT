@@ -28,7 +28,7 @@
 **CSV 내보내기**는 같은 열 순서로 저장하므로 구글 시트에 다시 붙여 넣을 수 있습니다.
 
 ## 데이터 저장
-- **Netlify 사이트**: 로그인 후 Netlify Blobs에 저장됩니다. 설정 방법은 [NETLIFY.md](NETLIFY.md).
+- **Netlify 사이트**: 누구나 보기 전용으로 볼 수 있고, 로그인하면 수정할 수 있습니다. Netlify Blobs에 저장됩니다. 설정 방법은 [NETLIFY.md](NETLIFY.md).
 - **claude.ai 링크**: 링크 소유자만 읽고 쓸 수 있는 서버 저장소에 저장됩니다. 왼쪽 위 상태 표시가 `서버에 저장됨`인지 확인하세요.
 - **`public/index.html`을 파일로 열 때**: 이 브라우저(localStorage)에만 저장되고 빈 상태로 시작합니다. 엑셀 가져오기나 JSON 백업 불러오기로 데이터를 넣으세요.
 
