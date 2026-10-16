@@ -1,0 +1,294 @@
+<title>내 체험단 일정표</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Do+Hyeon&family=IBM+Plex+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: 체험권(바우처) 4장을 쌓은 목록. 위에는 선정일 입력과 마감 요약, 아래는 공통 미션. */
+:root {
+  --bg: #eef1f2;
+  --paper: #ffffff;
+  --ink: #1d2a30;
+  --muted: #5f6f76;
+  --line: #d3dade;
+  --accent: #116a6e;
+  --accent-soft: #dcefee;
+  --stamp: #c2412d;
+  --stamp-soft: #fbe6e1;
+  --ok: #2f7d3b;
+  --ok-soft: #e1f2e3;
+  --font-display: "Do Hyeon", "IBM Plex Sans KR", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12191c; --paper: #1b2428; --ink: #e4ecee; --muted: #9aabb1; --line: #2f3c42;
+    --accent: #5cc3c3; --accent-soft: #1d3638; --stamp: #f08a73; --stamp-soft: #3a2420;
+    --ok: #7fcf8a; --ok-soft: #1f3423; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12191c; --paper: #1b2428; --ink: #e4ecee; --muted: #9aabb1; --line: #2f3c42;
+  --accent: #5cc3c3; --accent-soft: #1d3638; --stamp: #f08a73; --stamp-soft: #3a2420;
+  --ok: #7fcf8a; --ok-soft: #1f3423; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body);
+  font-size: 15px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+}
+.wrap { max-width: 860px; margin: 0 auto; display: grid; gap: 28px; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 400; text-wrap: balance; margin: 0; line-height: 1.2; }
+h1 { font-size: clamp(30px, 6vw, 44px); }
+h2 { font-size: 24px; }
+h3 { font-size: 26px; }
+.sub { color: var(--muted); margin: 6px 0 0; }
+.label { font-size: 12px; letter-spacing: .06em; color: var(--muted); font-weight: 500; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+.setup { display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: end; padding: 18px 20px; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; }
+.field { display: grid; gap: 4px; }
+input[type="date"] { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); min-height: 40px; }
+input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.setup p { margin: 0; flex: 1 1 260px; min-width: 0; color: var(--muted); font-size: 13px; }
+
+.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.due { padding: 12px 14px; border-radius: 8px; background: var(--paper); border: 1px solid var(--line); display: grid; gap: 2px; }
+.due b { font-family: var(--font-display); font-weight: 400; font-size: 18px; }
+.due .when { font-size: 13px; color: var(--muted); }
+.due.urgent { border-color: var(--stamp); background: var(--stamp-soft); }
+.due.urgent .when { color: var(--stamp); font-weight: 500; }
+.due.done { opacity: .6; }
+
+.tickets { display: grid; gap: 18px; }
+.ticket { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; display: grid; grid-template-columns: 1fr; position: relative; overflow: hidden; }
+.ticket-head { padding: 18px 20px 14px; display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; align-items: start; border-bottom: 2px dashed var(--line); }
+.ticket-head > div { min-width: 0; }
+.order { font-family: var(--font-mono); font-size: 12px; color: var(--accent); }
+.perk { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+.stamps { display: flex; flex-wrap: wrap; gap: 6px; }
+.stamp { font-size: 12.5px; font-weight: 700; padding: 3px 9px; border: 1.5px solid var(--stamp); color: var(--stamp); border-radius: 4px; transform: rotate(-1.5deg); background: var(--stamp-soft); white-space: nowrap; }
+.stamp.info { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); transform: none; font-weight: 500; }
+.ticket-body { padding: 16px 20px 18px; display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 18px 28px; }
+@media (max-width: 640px) { .ticket-body { grid-template-columns: 1fr; } }
+dl { margin: 0; display: grid; grid-template-columns: 76px 1fr; gap: 6px 12px; font-size: 14px; }
+dt { color: var(--muted); }
+dd { margin: 0; min-width: 0; }
+.notes { margin: 10px 0 0; padding-left: 18px; font-size: 13.5px; color: var(--muted); display: grid; gap: 2px; }
+.notes .warn { color: var(--stamp); }
+.side { display: grid; gap: 12px; align-content: start; }
+.phone { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.phone .num { font-family: var(--font-mono); font-size: 17px; user-select: all; }
+button { font: inherit; cursor: pointer; border-radius: 6px; }
+.copy { font-size: 13px; padding: 5px 10px; border: 1px solid var(--accent); background: transparent; color: var(--accent); min-height: 32px; }
+.copy:hover { background: var(--accent-soft); }
+.visit-warn { font-size: 13px; color: var(--stamp); margin: 0; min-height: 0; }
+.visit-ok { font-size: 13px; color: var(--ok); margin: 0; }
+.steps { display: flex; flex-wrap: wrap; gap: 6px; }
+.step { font-size: 13px; padding: 6px 11px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); min-height: 34px; }
+.step[aria-pressed="true"] { background: var(--ok-soft); border-color: var(--ok); color: var(--ok); font-weight: 700; }
+.step[aria-pressed="true"]::before { content: "✓ "; }
+.ticket.complete .ticket-head h3 { text-decoration: line-through; text-decoration-color: var(--ok); }
+
+.common { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; display: grid; gap: 10px; }
+.common ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; columns: 2; }
+@media (max-width: 560px) { .common ul { columns: 1; } }
+.foot { font-size: 12.5px; color: var(--muted); margin: 0; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>내 체험단 일정표</h1>
+    <p class="sub">선정된 4곳의 방문 제한, 연락 방법, 리뷰 마감을 한곳에 모았어요. 날짜를 넣으면 마감일을 계산하고, 진행 상황은 이 브라우저에 저장돼요.</p>
+  </header>
+
+  <section class="setup" aria-label="선정일 입력">
+    <div class="field">
+      <label class="label" for="selected">체험단 선정일</label>
+      <input type="date" id="selected">
+    </div>
+    <p>화요반점은 선정 후 7일 안에 방문해야 해서 선정일이 필요해요. 각 업체 카드에 방문 예정일을 넣으면 방문 불가 요일인지도 알려줘요.</p>
+  </section>
+
+  <section aria-label="마감 요약">
+    <div class="label" style="margin-bottom:8px">다가오는 마감</div>
+    <div class="summary" id="summary"></div>
+  </section>
+
+  <section class="tickets" id="tickets" aria-label="업체별 체험권"></section>
+
+  <section class="common">
+    <h2>4곳 공통 블로그 미션</h2>
+    <ul>
+      <li>사진 최소 15장 (동영상 포함)</li>
+      <li>본문 1,000자 이상</li>
+      <li>본문 하단에 지도 위치 링크</li>
+      <li>지정 키워드 + 자율 키워드 1개를 3회 이상</li>
+      <li>제목은 키워드 + 업체명, 간결하게</li>
+      <li>미션 미준수 시 수정 요청 가능</li>
+    </ul>
+  </section>
+
+  <p class="foot">인씨주막과 ATLAS BAR의 리뷰 마감은 각 체험단의 콘텐츠 등록기간을 따라요. 체험단 사이트에서 등록기간을 확인하세요.</p>
+</div>
+
+<script>
+const DAYS = ["일","월","화","수","목","금","토"];
+const SHOPS = [
+  {
+    id: "hwayo", name: "화요반점 본점", area: "서울 금천",
+    perk: "차슈고추잡채 or 동파차슈 택1 + 소주 or 맥주 2병 (2인 기준)",
+    phone: "010-7317-8396",
+    stamps: [["저녁만 가능"], ["선정 후 7일 내 방문"], ["방문 후 3일 내 리뷰"]],
+    rows: [["예약", "예약 없이 문자로 방문 요일·시간·인원 전송"], ["방문 시", "초청장 제시"], ["리뷰 후", "리뷰 링크를 이 번호로 꼭 전송"]],
+    notes: ["2인 초과 시 추가 메뉴·주류는 본인 결제", "20~40대만 체험 가능", "네이버 클립은 #협찬을 맨 위에, 지도 + 해시태그 5개"],
+    blockedDays: [], visitWithinFromSelected: 7, reviewDays: 3,
+    steps: ["문자 보냄", "방문", "리뷰", "링크 전송"]
+  },
+  {
+    id: "dahong", name: "다홍 난곡2호점", area: "서울 관악",
+    perk: "25,000원 금액 체험권",
+    phone: "010-2110-6065",
+    stamps: [["토·일 불가"], ["사전 예약 필수", "info"]],
+    rows: [["예약", "방문 전 전화로 예약하고 시간 조율"], ["리뷰", "체험 후 7일 이내"]],
+    notes: ["네이버 클립은 해시태그 5개를 먼저, 내용은 짧게"],
+    blockedDays: [0, 6], reviewDays: 7,
+    steps: ["예약", "방문", "리뷰"]
+  },
+  {
+    id: "insi", name: "인씨주막", area: "서울 영등포",
+    perk: "30,000원 체험권 (2인 기준)",
+    phone: "010-9507-0715",
+    stamps: [["금요일 불가"], ["20시 이전만"], ["문자 먼저", "info"]],
+    rows: [["예약", "예약 전 꼭 문자 먼저 보내기"], ["리뷰", "콘텐츠 등록기간 내"]],
+    notes: [["warn", "AI·ChatGPT로 쓰지 말고 직접 경험을 바탕으로 작성해 달라는 요청"]],
+    blockedDays: [5], reviewDays: null,
+    steps: ["문자 보냄", "방문", "리뷰"]
+  },
+  {
+    id: "atlas", name: "ATLAS BAR", area: "서울 영등포",
+    perk: "칵테일 50,000원 체험권",
+    phone: "010-8346-0117",
+    stamps: [["19:30~20:00 방문 요청"]],
+    rows: [["예약", "전화 예약, 19:30~20:00로 요청"], ["리뷰", "콘텐츠 등록기간 내"]],
+    notes: ["주말 제한은 안내 없음, 예약할 때 확인", "인씨주막과 시간이 겹치니 다른 날로 잡기"],
+    blockedDays: [], reviewDays: null,
+    steps: ["예약", "방문", "리뷰"]
+  }
+];
+
+const KEY = "campaign-tracker-v1";
+let state = { selected: "", visits: {}, done: {} };
+try { const s = JSON.parse(localStorage.getItem(KEY) || "null"); if (s) state = Object.assign(state, s); } catch (e) {}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+
+function parse(d) { if (!d) return null; const [y, m, dd] = d.split("-").map(Number); return new Date(y, m - 1, dd); }
+function addDays(dt, n) { const r = new Date(dt); r.setDate(r.getDate() + n); return r; }
+function fmt(dt) { return `${dt.getMonth() + 1}/${dt.getDate()} (${DAYS[dt.getDay()]})`; }
+function today() { const t = new Date(); return new Date(t.getFullYear(), t.getMonth(), t.getDate()); }
+function dleft(dt) { return Math.round((dt - today()) / 86400000); }
+function dlabel(n) { return n < 0 ? `${-n}일 지남` : n === 0 ? "오늘" : `D-${n}`; }
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+function isDone(id, step) { return !!(state.done[id] && state.done[id][step]); }
+
+function renderTickets() {
+  const root = document.getElementById("tickets");
+  root.innerHTML = SHOPS.map((s, i) => `
+    <article class="ticket" id="t-${s.id}">
+      <div class="ticket-head">
+        <div>
+          <div class="order">추천 순서 ${i + 1} · ${esc(s.area)}</div>
+          <h3>${esc(s.name)}</h3>
+          <p class="perk">${esc(s.perk)}</p>
+        </div>
+        <div class="stamps">${s.stamps.map(([t, k]) => `<span class="stamp ${k || ""}">${esc(t)}</span>`).join("")}</div>
+      </div>
+      <div class="ticket-body">
+        <div>
+          <dl>${s.rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>
+          <ul class="notes">${s.notes.map(n => Array.isArray(n) ? `<li class="${n[0]}">${esc(n[1])}</li>` : `<li>${esc(n)}</li>`).join("")}</ul>
+        </div>
+        <div class="side">
+          <div class="phone"><span class="num">${s.phone}</span><button class="copy" data-phone="${s.phone}" type="button">번호 복사</button></div>
+          <div class="field">
+            <label class="label" for="visit-${s.id}">방문 예정일</label>
+            <input type="date" id="visit-${s.id}" data-visit="${s.id}" value="${esc(state.visits[s.id] || "")}">
+          </div>
+          <p class="visit-msg" id="msg-${s.id}"></p>
+          <div class="steps">${s.steps.map(st => `<button type="button" class="step" data-shop="${s.id}" data-step="${st}" aria-pressed="${isDone(s.id, st)}">${esc(st)}</button>`).join("")}</div>
+        </div>
+      </div>
+    </article>`).join("");
+}
+
+function updateDerived() {
+  const sel = parse(state.selected);
+  const dues = [];
+  SHOPS.forEach(s => {
+    const v = parse(state.visits[s.id]);
+    const msg = document.getElementById("msg-" + s.id);
+    let text = "", cls = "visit-warn";
+    if (v) {
+      if (s.blockedDays.includes(v.getDay())) text = `${DAYS[v.getDay()]}요일은 체험 불가예요. 다른 날로 바꿔 주세요.`;
+      else if (s.visitWithinFromSelected && sel && v > addDays(sel, s.visitWithinFromSelected)) text = `방문 기한(${fmt(addDays(sel, s.visitWithinFromSelected))})을 넘겼어요.`;
+      else { text = `${fmt(v)} 방문 가능한 날이에요.`; cls = "visit-ok"; }
+    }
+    msg.textContent = text; msg.className = cls;
+
+    const allDone = s.steps.every(st => isDone(s.id, st));
+    document.getElementById("t-" + s.id).classList.toggle("complete", allDone);
+
+    if (s.visitWithinFromSelected && sel && !isDone(s.id, "방문"))
+      dues.push({ name: s.name, what: "방문 마감", date: addDays(sel, s.visitWithinFromSelected) });
+    if (s.reviewDays && v && !isDone(s.id, "리뷰"))
+      dues.push({ name: s.name, what: "리뷰 마감", date: addDays(v, s.reviewDays) });
+    if (!s.reviewDays && !isDone(s.id, "리뷰"))
+      dues.push({ name: s.name, what: "리뷰 마감", date: null });
+  });
+  dues.sort((a, b) => (a.date ? a.date : Infinity) - (b.date ? b.date : Infinity));
+  const box = document.getElementById("summary");
+  if (!sel && !Object.values(state.visits).some(Boolean)) {
+    box.innerHTML = `<div class="due"><b>날짜를 넣어 주세요</b><span class="when">선정일과 방문 예정일을 넣으면 마감일이 여기에 정리돼요.</span></div>` +
+      dues.filter(d => !d.date).map(d => `<div class="due"><b>${esc(d.name)}</b><span class="when">${d.what}: 등록기간 확인</span></div>`).join("");
+    if (!sel) box.insertAdjacentHTML("afterbegin", `<div class="due urgent"><b>화요반점 본점</b><span class="when">선정 후 7일 안에 방문해야 해요</span></div>`);
+    return;
+  }
+  box.innerHTML = dues.length ? dues.map(d => {
+    if (!d.date) return `<div class="due"><b>${esc(d.name)}</b><span class="when">${d.what}: 등록기간 확인</span></div>`;
+    const n = dleft(d.date);
+    return `<div class="due ${n <= 2 ? "urgent" : ""}"><b>${esc(d.name)}</b><span class="when">${d.what} <span class="mono">${fmt(d.date)}</span> · ${dlabel(n)}</span></div>`;
+  }).join("") : `<div class="due done"><b>모두 끝났어요</b><span class="when">남은 마감이 없어요.</span></div>`;
+}
+
+renderTickets();
+const selInput = document.getElementById("selected");
+selInput.value = state.selected || "";
+selInput.addEventListener("change", () => { state.selected = selInput.value; save(); updateDerived(); });
+
+document.getElementById("tickets").addEventListener("change", e => {
+  const id = e.target.dataset.visit;
+  if (id) { state.visits[id] = e.target.value; save(); updateDerived(); }
+});
+document.getElementById("tickets").addEventListener("click", e => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  if (b.dataset.phone) {
+    const done = () => { b.textContent = "복사됨"; setTimeout(() => (b.textContent = "번호 복사"), 1500); };
+    const fallback = () => { const r = document.createRange(); r.selectNodeContents(b.previousElementSibling); const s = getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = "선택됨, 복사하세요"; };
+    try { navigator.clipboard.writeText(b.dataset.phone).then(done, fallback); } catch (err) { fallback(); }
+    return;
+  }
+  if (b.dataset.step) {
+    const { shop, step } = b.dataset;
+    state.done[shop] = state.done[shop] || {};
+    state.done[shop][step] = !state.done[shop][step];
+    b.setAttribute("aria-pressed", state.done[shop][step]);
+    save(); updateDerived();
+  }
+});
+updateDerived();
+</script>
