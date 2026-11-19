@@ -129,7 +129,8 @@ function contentItems() {
 }
 
 function contentUrl(id) {
-  return "content/index.html?item=" + encodeURIComponent(id);
+  const href = "content/index.html?item=" + encodeURIComponent(id);
+  return window.teamWorkspace?.navigationUrl?.(href) || href;
 }
 
 function contentSchedule() {

@@ -35,7 +35,11 @@ if netlify:
         path = out / asset.lstrip('/')
         path.parent.mkdir(parents=True, exist_ok=True)
         if asset.endswith('.html'):
-            body = body.replace('/signout-with-chatgpt', '/login.html?logout=1')
+            body = re.sub(
+                r'href="/signout-with-chatgpt" target="_top"\s*>로그아웃\s*',
+                'href="/login.html" data-team-session target="_top">관리자 로그인',
+                body,
+            )
             body = body.replace('<html lang="ko">', '<html lang="ko" data-auth="netlify">')
         path.write_text(body)
     for name in ('login.html', 'login.js'):

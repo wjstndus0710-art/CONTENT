@@ -790,7 +790,7 @@
         const reviews = source ? parseJournal(source).reviews.filter(review => review.contentId === it.id) : [];
         if (reviews.length) {
           const link = document.createElement('a');
-          link.href = '../#reviews';
+          link.href = window.teamWorkspace?.navigationUrl?.('../#reviews') || '../#reviews';
           link.textContent = '연결된 검수 요청';
           const list = document.createElement('ul');
           for (const review of reviews) {

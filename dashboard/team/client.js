@@ -22,9 +22,12 @@
 
   async function connect() {
     const netlify = document.documentElement.dataset.auth === "netlify";
+    const editPage = new URL(location.href);
+    const requestedEdit = editPage.searchParams.get("edit") === "1";
+    editPage.searchParams.set("edit", "1");
     const loginUrl =
       "/login.html?return=" +
-      encodeURIComponent(location.pathname + location.search);
+      encodeURIComponent(editPage.pathname + editPage.search);
     if (netlify && /(?:^#|&)(?:invite|recovery)_token=/.test(location.hash)) {
       location.replace(loginUrl + location.hash);
       return;
@@ -33,12 +36,29 @@
     const response = await fetch(endpoint, { cache: "no-store" });
     if (!response.ok) throw new Error();
     const workspace = await response.json();
+    const canWrite = workspace.canWrite && (!netlify || requestedEdit);
+    const editPaths = [
+      "/",
+      "/index.html",
+      "/content/",
+      "/content/index.html",
+      "/monthly-report.html",
+    ];
+    const navigationUrl = (href) => {
+      if (!netlify || !canWrite) return href;
+      const url = new URL(href, location.href);
+      if (url.origin === location.origin && editPaths.includes(url.pathname)) {
+        url.searchParams.set("edit", "1");
+        return url.href;
+      }
+      return href;
+    };
     let revision = workspace.revision;
     let records = workspace.records;
     let pending = false;
     let saving = false;
     let conflicted = false;
-    const role = workspace.canWrite ? "관리자" : "읽기 전용";
+    const role = canWrite ? "관리자" : "읽기 전용";
 
     async function flush() {
       if (saving || conflicted || !pending) return;
@@ -87,12 +107,13 @@
     }
 
     window.teamWorkspace = {
-      canWrite: workspace.canWrite,
+      canWrite,
+      navigationUrl,
       storage: {
         getItem: (key) =>
           Object.hasOwn(records, key) ? JSON.stringify(records[key]) : null,
         setItem(key, value) {
-          if (!workspace.canWrite || !keys.includes(key) || conflicted)
+          if (!canWrite || !keys.includes(key) || conflicted)
             throw new Error("저장할 수 없습니다.");
           records = { ...records, [key]: JSON.parse(value) };
           pending = true;
@@ -100,22 +121,36 @@
         },
       },
     };
-    if (netlify && !workspace.canWrite) {
-      for (const link of document.querySelectorAll(
-        'a[href="/login.html?logout=1"]',
-      )) {
-        link.href = loginUrl;
-        link.textContent = "관리자 로그인";
+    if (netlify) {
+      for (const link of document.querySelectorAll("[data-team-session]")) {
+        if (canWrite) {
+          link.href = "/login.html?logout=1";
+          link.textContent = "로그아웃";
+        } else {
+          link.href = workspace.canWrite
+            ? editPage.pathname + editPage.search
+            : loginUrl;
+          link.textContent = workspace.canWrite
+            ? "관리자 편집"
+            : "관리자 로그인";
+        }
+      }
+      if (canWrite) {
+        for (const link of document.querySelectorAll(
+          "a[href]:not([data-team-session])",
+        )) {
+          link.href = navigationUrl(link.getAttribute("href"));
+        }
       }
     }
-    document.body.classList.toggle("team-viewer", !workspace.canWrite);
-    if (workspace.canWrite)
+    document.body.classList.toggle("team-viewer", !canWrite);
+    if (canWrite)
       window.addEventListener("beforeunload", (event) => {
         if (pending || saving) event.preventDefault();
       });
 
     function importOffer() {
-      if (!workspace.canWrite || revision) {
+      if (!canWrite || revision) {
         notify(role + " · 공유 저장소");
         return;
       }
