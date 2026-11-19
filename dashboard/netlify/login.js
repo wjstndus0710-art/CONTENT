@@ -79,6 +79,9 @@ form.onsubmit = async (event) => {
   status.textContent = "";
   button.disabled = true;
   try {
+    if (mode === "logout") {
+      await fetch("/api/viewer-session", { method: "DELETE" });
+    }
     await send({
       action: mode,
       email: form.elements.email.value,

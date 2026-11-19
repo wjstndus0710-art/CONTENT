@@ -16,6 +16,12 @@ const journalKey = "marketing-journal-local-v1";
 function memoryStore(initial = {}) {
   const records = new Map(Object.entries(initial));
   return {
+    async setJSON(key, data) {
+      records.set(key, { data });
+    },
+    async delete(key) {
+      records.delete(key);
+    },
     async get(key) {
       return records.get(key)?.data ?? null;
     },
@@ -51,7 +57,15 @@ function setup(previousDeploys = {}) {
     "blogStats/old": { data: { id: "old", views: 1 } },
     "settings/divisions": { data: { id: "divisions", list: [] } },
   });
-  const call = (host, user, method = "GET", data, origin = host) => {
+  const call = (
+    host,
+    user,
+    method = "GET",
+    data,
+    origin = host,
+    path = "/api/workspace",
+    cookie = "",
+  ) => {
     const handler = createHandler({
       identity: async () => user,
       env,
@@ -65,9 +79,13 @@ function setup(previousDeploys = {}) {
         previousDeploys[deployID] ?? memoryStore(),
     });
     return handler(
-      new Request(host + "/api/workspace", {
+      new Request(host + path, {
         method,
-        headers: { Origin: origin, "Content-Type": "application/json" },
+        headers: {
+          Origin: origin,
+          "Content-Type": "application/json",
+          Cookie: cookie,
+        },
         body: data ? JSON.stringify(data) : undefined,
       }),
     );
@@ -174,5 +192,97 @@ test("이전 미리보기의 기록을 같은 미리보기 주소에 복원하�
   assert.deepEqual(
     (await (await call(preview, viewer)).json()).records,
     updated.records,
+  );
+});
+
+test("관리자가 발급한 읽기 링크는 로그인 없이 열리며 수정은 차단되고 폐기할 수 있다", async () => {
+  const { call } = setup();
+  const linkPath = "/api/viewer-link";
+  const sessionPath = "/api/viewer-session";
+  assert.equal(
+    (await call(preview, null, "POST", undefined, preview, linkPath)).status,
+    403,
+  );
+  assert.equal(
+    (await call(preview, viewer, "POST", undefined, preview, linkPath)).status,
+    403,
+  );
+  assert.equal(
+    (
+      await call(
+        preview,
+        owner,
+        "POST",
+        undefined,
+        "https://other.invalid",
+        linkPath,
+      )
+    ).status,
+    403,
+  );
+  const { token } = await (
+    await call(preview, owner, "POST", undefined, preview, linkPath)
+  ).json();
+  assert.match(token, /^[A-Za-z0-9_-]{43}$/);
+  const opened = await call(
+    preview,
+    null,
+    "POST",
+    { token },
+    preview,
+    sessionPath,
+  );
+  assert.equal(opened.status, 204);
+  const cookieHeader = opened.headers.get("set-cookie");
+  assert.match(cookieHeader, /HttpOnly; Secure; SameSite=Lax/);
+  const cookie = cookieHeader.split(";")[0];
+  const records = await (
+    await call(
+      preview,
+      null,
+      "GET",
+      undefined,
+      preview,
+      "/api/workspace",
+      cookie,
+    )
+  ).json();
+  assert.equal(records.canWrite, false);
+  assert.equal(
+    (
+      await call(
+        preview,
+        null,
+        "PUT",
+        { revision: null, records: {} },
+        preview,
+        "/api/workspace",
+        cookie,
+      )
+    ).status,
+    403,
+  );
+  assert.equal(
+    (await call(production, null, "POST", { token }, production, sessionPath))
+      .status,
+    403,
+  );
+  assert.equal(
+    (await call(preview, owner, "DELETE", undefined, preview, linkPath)).status,
+    200,
+  );
+  assert.equal(
+    (
+      await call(
+        preview,
+        null,
+        "GET",
+        undefined,
+        preview,
+        "/api/workspace",
+        cookie,
+      )
+    ).status,
+    401,
   );
 });

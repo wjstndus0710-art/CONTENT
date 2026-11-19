@@ -3,7 +3,15 @@ import { getDeployStore, getStore } from "@netlify/blobs";
 import { getUser } from "@netlify/identity";
 import { json, workspace } from "../../team/workspace.mjs";
 
-export const config = { path: "/api/workspace" };
+import {
+  mayReadWithLink,
+  viewerLink,
+  viewerSession,
+} from "../viewer-access.mjs";
+
+export const config = {
+  path: ["/api/workspace", "/api/viewer-link", "/api/viewer-session"],
+};
 
 const storeName = "marketing-journal-workspace";
 const consistency = "strong";
@@ -102,15 +110,12 @@ export function createHandler({
 } = {}) {
   return async function handle(request) {
     try {
-      const user = await identity();
-      if (!user) return json({ error: "로그인이 필요합니다." }, 401);
+      const { origin, pathname } = new URL(request.url);
       const admin = env.JOURNAL_ADMIN_EMAIL?.trim().toLowerCase();
-      if (!admin) return json({ error: "관리자 계정을 설정해 주세요." }, 503);
-      const canWrite = user.email?.trim().toLowerCase() === admin;
-      if (!canWrite && !user.roles?.includes("viewer")) {
-        return json({ error: "팀원 보기 권한이 필요합니다." }, 403);
-      }
-      const origin = new URL(request.url).origin;
+      const user = pathname === "/api/viewer-session" ? null : await identity();
+      const canWrite = Boolean(
+        admin && user?.email?.trim().toLowerCase() === admin,
+      );
       const production = origin === env.JOURNAL_PRODUCTION_ORIGIN;
       const scope = createHash("sha256")
         .update(origin)
@@ -120,6 +125,17 @@ export function createHandler({
         name: production ? storeName : storeName + "-preview-" + scope,
         consistency,
       });
+      if (pathname === "/api/viewer-link")
+        return await viewerLink(request, store, canWrite);
+      if (pathname === "/api/viewer-session")
+        return await viewerSession(request, store);
+      const linkViewer = !canWrite && (await mayReadWithLink(request, store));
+      if (!user && !linkViewer)
+        return json({ error: "로그인이 필요합니다." }, 401);
+      if (!admin) return json({ error: "관리자 계정을 설정해 주세요." }, 503);
+      if (!canWrite && !linkViewer && !user?.roles?.includes("viewer")) {
+        return json({ error: "팀원 보기 권한이 필요합니다." }, 403);
+      }
       const legacy = production
         ? siteStore({ name: "content-dashboard", consistency })
         : null;
