@@ -717,18 +717,23 @@ aside {
 }
 #work-form {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
 }
 #work-form label {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
 }
 #work-form input,
+#work-form select,
 #work-form textarea {
   width: 100%;
+  min-width: 0;
 }
 #work-form .work-head {
   justify-content: flex-end;
+  flex-wrap: wrap;
   margin: 0;
 }
 
