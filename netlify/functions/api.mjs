@@ -1,6 +1,7 @@
 // Netlify version of the journal API: same routes as server.js, stored in Netlify Blobs.
 import {createHash, timingSafeEqual} from 'node:crypto';
 import {validDate, invalidTasks, isMonday} from '../../journal-rules.js';
+import {maintenanceResponse} from '../maintenance.mjs';
 
 const json=(status,value,headers={})=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store',...headers}});
 const digest=value=>createHash('sha256').update(value).digest();
@@ -68,6 +69,8 @@ export function createHandler(store, env=process.env) {
 
 let handler;
 export default async req=>{
+ const paused=maintenanceResponse(req);
+ if(paused)return paused;
  if(!handler){
   const {getStore}=await import('@netlify/blobs');
   const blobs=getStore({name:'marketing-journal',consistency:'strong'});
