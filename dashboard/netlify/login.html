@@ -35,6 +35,25 @@
             <a href="./">마케팅 일지</a>
           </div>
         </form>
+        <div id="auth-help">
+          <button type="button" class="secondary" id="request-reset">
+            비밀번호 재설정 메일 받기
+          </button>
+          <details>
+            <summary>초대·재설정 링크로 비밀번호 설정</summary>
+            <form id="auth-link-form" method="post" action="/api/journal-auth">
+              <label
+                >메일 링크<input
+                  type="url"
+                  id="auth-link"
+                  autocomplete="off"
+                  required
+              /></label>
+              <p class="hint" role="status" id="auth-link-status"></p>
+              <button class="secondary">비밀번호 설정 화면 열기</button>
+            </form>
+          </details>
+        </div>
       </div>
     </main>
   </body>

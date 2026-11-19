@@ -3,6 +3,7 @@ import {
   login,
   logout,
   recoverPassword,
+  requestPasswordRecovery,
   verifyRequestOrigin,
 } from "@netlify/identity";
 import { json } from "../../team/workspace.mjs";
@@ -19,7 +20,11 @@ export default async function handle(request) {
     const { action, email, password, token } = await request.json();
     if (action === "logout") await logout();
     else if (action === "login") await login(email, password);
-    else if (action === "invite") await acceptInvite(token, password);
+    else if (action === "request-reset") {
+      if (typeof email !== "string" || !email.trim() || email.length > 254)
+        return json({ error: "이메일 주소를 확인해 주세요." }, 400);
+      await requestPasswordRecovery(email.trim()).catch(() => {});
+    } else if (action === "invite") await acceptInvite(token, password);
     else if (action === "recovery") await recoverPassword(token, password);
     else return json({ error: "지원하지 않는 요청입니다." }, 400);
     return json({ ok: true });
