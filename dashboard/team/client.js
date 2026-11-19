@@ -277,6 +277,12 @@
     };
   }
 
+  if (document.documentElement.dataset.auth === "netlify") {
+    window.addEventListener("hashchange", () => {
+      if (new URLSearchParams(location.hash.slice(1)).has("view")) location.reload();
+    });
+  }
+
   connect().catch(() => {
     notify("공유 기록에 연결하지 못했습니다.", "다시 불러오기", () =>
       location.reload(),
