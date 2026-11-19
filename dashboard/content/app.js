@@ -28,8 +28,7 @@
 
   function contentCategory(item) {
     const source = knownCategory(item.sourceChannel);
-    return knownCategory(item.category) ||
-      (source?.key === '링크드인' ? source : knownCategory(item.division));
+    return item.category || (source?.key === '링크드인' ? source.key : item.division);
   }
 
   const categoryStyle = category => category
@@ -208,7 +207,7 @@
     const it = {
       id: raw.id ? String(raw.id) : uid(),
       division: normDivision(raw.division),
-      category: knownCategory(raw.category)?.key || '',
+      category: knownCategory(raw.category)?.key || String(raw.category || '').trim(),
       title: String(raw.title || '').trim(),
       mainKeyword: String(raw.mainKeyword || '').trim(),
       naver: (() => { const n = String(raw.naver || '').trim(); return /^y(es)?$/i.test(n) ? 'Y' : /^n(o)?$/i.test(n) ? 'N' : n; })(),
@@ -249,7 +248,7 @@
     const range = ignorePeriod ? null : periodRange();
     return items.filter((it) => {
       if (dv && it.division !== dv) return false;
-      if (category && contentCategory(it)?.key !== category) return false;
+      if (category && contentCategory(it) !== category) return false;
       if (src && it.sourceChannel !== src) return false;
       if (pr && stage(it) !== pr) return false;
       if (ow && it.owner !== ow) return false;
@@ -276,9 +275,11 @@
     const extra = uniq(items.map((i) => i.division)).filter((key) => !configured.includes(key));
     return [...configured, ...extra];
   }
-  function fillDivisionEditor(select) {
-    const keys = new Set([...CONTENT_CATEGORIES, ...allDivisions().map(key => normDivision(key))]);
-    const options = [...keys].map(key => {
+  function allCategories() {
+    return [...new Set([...CONTENT_CATEGORIES, ...allDivisions(), ...items.map(contentCategory).filter(Boolean)])];
+  }
+  function fillCategoryEditor(select) {
+    const options = allCategories().map(key => {
       const option = new Option(divLabel(key), key);
       const category = knownCategory(key);
       if (category) {
@@ -287,8 +288,7 @@
       }
       return option;
     });
-    if (mayWrite) options.push(new Option('+ 사업부 추가…', '__add__'));
-    select.replaceChildren(...options);
+    select.replaceChildren(new Option('자동 분류', ''), ...options);
   }
   function refreshFilterOptions() {
     const fill = (sel, values, label, show = (v) => v) => {
@@ -298,7 +298,7 @@
     };
     fill('#f-division', allDivisions(), '모든 사업부/서비스', divLabel);
     if (mayWrite) $('#f-division').insertAdjacentHTML('beforeend', '<option value="__add__">+ 사업부 추가…</option>');
-    fill('#f-category', CONTENT_CATEGORIES, '모든 카테고리');
+    fill('#f-category', allCategories(), '모든 카테고리', divLabel);
     fill('#f-source', uniq(items.map((i) => i.sourceChannel)), '모든 원문 채널');
     fill('#f-owner', uniq(items.map((i) => i.owner)), '모든 담당자');
     $('#dl-owner').innerHTML = uniq(items.map((i) => i.owner)).map((v) => `<option value="${esc(v)}">`).join('');
@@ -490,7 +490,7 @@
       <tr>
         <td>${divBadge(i.division)}</td>
         <td class="title-cell" data-id="${esc(i.id)}" title="${esc(i.title)}">${esc(i.title)}<span class="cell-meta">${esc(i.sourceChannel || '원문 채널 미정')} · ${esc(i.owner || '담당자 없음')}${i.stage ? ' · ' + esc(i.stage) : ''}</span></td>
-        <td>${esc(contentCategory(i)?.key || '–')}</td>
+        <td>${esc(contentCategory(i) || '–')}</td>
         <td class="wrap">${esc(i.mainKeyword || '–')}<span class="cell-meta">노출 ${naverBadge(i.naver)}</span></td>
         <td class="nowrap">${i.publishDate || '–'}</td>
         ${CHANNELS.map((c) => `<td>${chip(i, c)}</td>`).join('')}
@@ -519,8 +519,9 @@
       html += `<div class="cal-cell ${d.getMonth() !== m.getMonth() ? 'is-out' : ''} ${iso === t ? 'is-today' : ''}" data-date="${iso}">
         <span class="cal-day">${d.getDate()}</span>
         ${its.slice(0, 4).map((item) => {
-          const category = contentCategory(item);
-          const { icon, key } = category || divInfo(item.division);
+          const categoryKey = contentCategory(item);
+          const category = knownCategory(categoryKey);
+          const { icon, key } = category || divInfo(categoryKey);
           const label = [key, item.title].filter(Boolean).join(' | ');
           return `<div class="cal-item"${categoryStyle(category)} data-id="${esc(item.id)}" title="${esc(label)} · 진행률 ${pct(progress(item))}">${esc(icon)} ${esc(item.title)}</div>`;
         }).join('')}
@@ -671,7 +672,6 @@
 
   // ---------- 편집 모달 ----------
   const dlg = $('#editor'), form = $('#editor-form');
-  $('#e-category').append(...CONTENT_CATEGORIES.map(value => new Option(value)));
   $('#e-channels').insertAdjacentHTML('beforeend', CHANNELS.map((c) => `
     <label>${c}<select name="ch:${c}" id="e-ch-${c}"><option value="">(빈칸)</option>${STATUS_KEYS.map((s) => `<option>${s}</option>`).join('')}</select></label>`).join(''));
 
@@ -819,9 +819,10 @@
     ui.editingId = it ? it.id : null;
     $('#editor-title').textContent = it ? (mayWrite ? '콘텐츠 편집' : '콘텐츠 상세') : '새 콘텐츠';
     $('#btn-delete').hidden = !it;
-    fillDivisionEditor(form.division);
-    const v = it || normalize({ category: $('#f-category').value, division: $('#f-division').value || allDivisions()[0], owner: items[0]?.owner || '', channels: Object.fromEntries(CHANNELS.map((c) => [c, '미작성'])), ...preset });
-    ['division', 'title', 'category', 'mainKeyword', 'naver', 'subKeywords', 'sourceChannel', 'publishDate', 'stage', 'publishUrl', 'result', 'learning', 'owner', 'notes'].forEach((k) => { form[k].value = v[k] || ''; });
+    fillCategoryEditor(form.category);
+    const v = it || normalize({ category: $('#f-category').value || $('#f-division').value, owner: items[0]?.owner || '', channels: Object.fromEntries(CHANNELS.map((c) => [c, '미작성'])), ...preset });
+    ['title', 'mainKeyword', 'naver', 'subKeywords', 'sourceChannel', 'publishDate', 'stage', 'publishUrl', 'result', 'learning', 'owner', 'notes'].forEach((k) => { form[k].value = v[k] || ''; });
+    form.category.value = contentCategory(v) || '';
     CHANNELS.forEach((c) => { form['ch:' + c].value = v.channels[c] || ''; });
     openGrowthFields(v, preset.section);
     const publishedLink = $('#published-link');
@@ -879,6 +880,7 @@
     data.channels = Object.fromEntries(CHANNELS.map((c) => [c, data['ch:' + c]]));
     if (ui.editingId) {
       const idx = items.findIndex((i) => i.id === ui.editingId);
+      data.division = items[idx].division;
       const legacyInstagram = items[idx].channels['인스타'];
       if (legacyInstagram) data.channels['인스타'] = legacyInstagram;
       items[idx] = normalize({ ...data, id: ui.editingId, updatedAt: new Date().toISOString() });
@@ -1559,7 +1561,6 @@
 
   // ---------- 사업부 관리 ----------
   const DIV_ICONS = ['🔗', '🧩', '☁️', '🛒', '🏭', '💳', '🛡️', '📊', '🚚', '🏷️', '📌', '⚙️'];
-  let divReturn = null; // 콘텐츠 편집 창에서 열었으면 추가한 사업부를 그 창에 선택해 준다
   function saveSettings() {
     try { recordStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* 무시 */ }
   }
@@ -1576,8 +1577,7 @@
         <button type="button" class="btn btn-ghost btn-sm" data-del-div="${esc(d.key)}" ${n ? `disabled title="이 사업부를 쓰는 콘텐츠 ${n}건이 있어 삭제할 수 없습니다"` : ''}>삭제</button></li>`;
     }).join('');
   }
-  function openDivisions(returnSelect = null) {
-    divReturn = returnSelect;
+  function openDivisions() {
     $('#div-icons').innerHTML = DIV_ICONS.map((ic, i) => `<label class="icon-pick"><input type="radio" name="icon" value="${ic}" ${i === 0 ? 'checked' : ''} /><span>${ic}</span></label>`).join('')
       + '<label class="icon-pick"><input type="radio" name="icon" value="" /><span class="muted">없음</span></label>';
     $('#div-name').value = '';
@@ -1599,13 +1599,6 @@
     setDivisions([...divisionsList(), { key: name, icon }]);
     render();
     toast(`사업부 ‘${name}’을(를) 추가했습니다.`);
-    if (divReturn) {
-      const sel = divReturn; divReturn = null;
-      fillDivisionEditor(sel);
-      sel.value = name;
-      $('#div-dialog').close();
-      return;
-    }
     $('#div-name').value = '';
     err.hidden = true;
     renderDivisionManager();
@@ -1620,7 +1613,7 @@
     render(); renderDivisionManager();
     toast(`사업부 ‘${key}’을(를) 삭제했습니다.`);
   });
-  $$('[data-close]', $('#div-dialog')).forEach((b) => b.addEventListener('click', () => { divReturn = null; $('#div-dialog').close(); }));
+  $$('[data-close]', $('#div-dialog')).forEach((b) => b.addEventListener('click', () => $('#div-dialog').close()));
   actions['manage-divisions'] = () => openDivisions();
   // 필터와 편집 창의 ‘+ 사업부 추가…’
   let lastDivFilter = '';
@@ -1628,13 +1621,6 @@
     if (e.target.value === '__add__') { e.stopImmediatePropagation(); e.target.value = lastDivFilter; openDivisions(); return; }
     lastDivFilter = e.target.value;
   }, true);
-  let lastEditorDiv = '';
-  form.division.addEventListener('focus', () => { lastEditorDiv = form.division.value; });
-  form.division.addEventListener('change', () => {
-    if (form.division.value === '__add__') { form.division.value = lastEditorDiv; openDivisions(form.division); }
-    else lastEditorDiv = form.division.value;
-  });
-
   let resizeTimer, lastW = innerWidth;
   addEventListener('resize', () => {
     if (innerWidth === lastW) return;
