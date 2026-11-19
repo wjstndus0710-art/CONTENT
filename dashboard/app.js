@@ -390,7 +390,7 @@ $("restore-file").onchange = async () => {
   }
 };
 
-function workRow(entry, key, contentById) {
+function reviewRow(entry, contentById) {
   const row = node("li", undefined, "work-row");
   const info = node("div");
   const late = stillOpen(entry) && entry.date < today();
@@ -398,12 +398,7 @@ function workRow(entry, key, contentById) {
     node("strong", entry.title),
     node(
       "p",
-      [
-        entry.date,
-        key === "reviews" ? entry.team : entry.kind,
-        entry.status,
-        late ? "기한 지남" : "",
-      ]
+      [entry.date, entry.team, entry.status, late ? "기한 지남" : ""]
         .filter(Boolean)
         .join(" · "),
       late ? "work-late" : "hint",
@@ -412,52 +407,80 @@ function workRow(entry, key, contentById) {
   if (entry.notes) info.append(node("p", entry.notes, "work-notes"));
   const content = contentById.get(entry.contentId);
   if (content) {
-    const link = node(
-      "a",
-      key === "reviews" ? content.title : "콘텐츠 관리에서 열기",
-    );
+    const link = node("a", content.title);
     link.href = contentUrl(content.id);
     info.append(link);
-  } else if (key === "reviews" && entry.contentId) {
+  } else if (entry.contentId) {
     info.append(node("p", "연결된 콘텐츠를 찾을 수 없습니다.", "hint"));
   }
-  if (key === "schedule" && entry.contentId) {
-    row.append(info);
-    return row;
+  row.append(info);
+  if (mayWrite) {
+    const edit = node("button", "수정", "secondary");
+    edit.setAttribute("aria-label", entry.title + " 수정");
+    edit.onclick = () => editReview(entry);
+    row.append(edit);
   }
-  const edit = node("button", "수정", "secondary");
-  edit.setAttribute("aria-label", entry.title + " 수정");
-  edit.onclick = () => editWork(key, entry);
-  row.append(info, edit);
   return row;
 }
 
-function renderWork() {
-  const mode = $("schedule-filter").value;
-  const contentById = new Map(contentItems().map((item) => [item.id, item]));
-  const schedule = [...journal.schedule, ...contentSchedule()]
-    .filter((entry) => {
-      if (mode === "week")
-        return entry.date >= weekStart && entry.date <= addDays(weekStart, 6);
-      if (mode === "upcoming") return stillOpen(entry);
-      return true;
-    })
+function renderUpcoming() {
+  const start = today();
+  const end = addDays(mondayOf(start), 6);
+  const upcoming = [
+    ...contentSchedule().map((entry) => ({ ...entry, label: "발행 예정" })),
+    ...journal.reviews.map((entry) => ({ ...entry, label: "검수 회신" })),
+  ]
+    .filter(
+      (entry) => entry.date >= start && entry.date <= end && stillOpen(entry),
+    )
     .sort(byDate);
+
+  const list = $("schedule-list");
+  list.replaceChildren();
+  if (!upcoming.length) {
+    list.append(
+      node("li", "이번 주에 남은 발행·검수 일정이 없습니다.", "hint"),
+    );
+    return;
+  }
+  for (const entry of upcoming) {
+    const row = node("li", undefined, "work-row");
+    const info = node("div");
+    const link = node("a", entry.title);
+    if (entry.kind === "검수 요청") {
+      link.href = "#reviews";
+      link.onclick = () => {
+        document.querySelector(".review-details").open = true;
+      };
+    } else {
+      link.href = contentUrl(entry.contentId);
+    }
+    info.append(
+      link,
+      node(
+        "p",
+        [entry.date, entry.label, entry.team].filter(Boolean).join(" · "),
+        "hint",
+      ),
+    );
+    row.append(info);
+    list.append(row);
+  }
+}
+
+function renderWork() {
+  const contentById = new Map(contentItems().map((item) => [item.id, item]));
   const reviews = [...journal.reviews].sort(
     (a, b) => Number(stillOpen(b)) - Number(stillOpen(a)) || byDate(a, b),
   );
   $("review-count").textContent =
     `미회신 ${reviews.filter(stillOpen).length}건 · 전체 ${reviews.length}건`;
-  $("schedule-list").replaceChildren(
-    ...(schedule.length
-      ? schedule.map((entry) => workRow(entry, "schedule", contentById))
-      : [node("li", "표시할 일정이 없습니다.", "hint")]),
-  );
   $("review-list").replaceChildren(
     ...(reviews.length
-      ? reviews.map((entry) => workRow(entry, "reviews", contentById))
+      ? reviews.map((entry) => reviewRow(entry, contentById))
       : [node("li", "등록된 검수 요청이 없습니다.", "hint")]),
   );
+  renderUpcoming();
   renderReport();
 }
 
@@ -480,21 +503,14 @@ function renderReport() {
 
 const form = $("work-form");
 const dialog = $("work-dialog");
-let editingWork;
+let editingReview;
 
-function editWork(key, entry) {
+function editReview(entry) {
   if (!mayWrite) return;
-  editingWork = { key, entry };
-  const review = key === "reviews";
-  const { kinds, statuses } = workOptions[key];
+  editingReview = entry;
   form.reset();
-  $("work-title").textContent =
-    (review ? "검수 요청" : "일정") + (entry ? " 수정" : " 추가");
-  $("work-kind-label").hidden = review;
-  $("work-team-label").hidden = !review;
-  $("work-content-label").hidden = !review;
+  $("work-title").textContent = entry ? "검수 요청 수정" : "검수 요청 추가";
   const contentSelect = form.elements.contentId;
-  contentSelect.disabled = !review;
   const options = contentItems().map(
     (item) =>
       new Option(
@@ -512,32 +528,21 @@ function editWork(key, entry) {
   }
   contentSelect.replaceChildren(new Option("연결 안 함", ""), ...options);
   contentSelect.value = entry?.contentId || "";
-  $("work-date-label").firstElementChild.textContent = review
-    ? "회신 기한"
-    : "예정일";
-  $("work-notes-label").firstElementChild.textContent = review
-    ? "검수·협조 요청 요약"
-    : "일정 메모";
-  form.elements.team.required = review;
-  form.elements.notes.required = review;
-  form.elements.kind.replaceChildren(
-    ...kinds.map((value) => new Option(value)),
-  );
   form.elements.status.replaceChildren(
-    ...statuses.map((value) => new Option(value)),
+    ...workOptions.reviews.statuses.map((value) => new Option(value)),
   );
   form.elements.date.value = today();
   $("work-error").textContent = "";
   $("work-delete").hidden = !entry;
-  for (const field of ["title", "kind", "team", "date", "status", "notes"]) {
+  for (const field of ["title", "team", "date", "status", "notes"]) {
     if (entry) form.elements[field].value = entry[field];
   }
   dialog.showModal();
 }
 
-function saveWork(entries) {
+function saveReviews(entries) {
   try {
-    persist({ ...journal, [editingWork.key]: entries });
+    persist({ ...journal, reviews: entries });
     renderWork();
     dialog.close();
   } catch {
@@ -547,35 +552,38 @@ function saveWork(entries) {
 
 form.onsubmit = (event) => {
   event.preventDefault();
-  const { key, entry } = editingWork;
+  if (!mayWrite) return;
+  const entry = editingReview;
   const values = Object.fromEntries(
     Array.from(new FormData(form), ([field, value]) => [
       field,
       field === "contentId" ? value : value.trim(),
     ]),
   );
-  if (!values.title || (key === "reviews" && (!values.team || !values.notes))) {
+  if (!values.title || !values.team || !values.notes) {
     $("work-error").textContent = "필수 항목을 입력해 주세요.";
     return;
   }
-  const next = { ...values, id: entry?.id ?? crypto.randomUUID() };
-  if (key === "schedule") $("schedule-filter").value = "all";
-  saveWork(
+  const next = {
+    ...values,
+    kind: "검수 요청",
+    id: entry?.id ?? crypto.randomUUID(),
+  };
+  saveReviews(
     entry
-      ? journal[key].map((item) => (item.id === entry.id ? next : item))
-      : [...journal[key], next],
+      ? journal.reviews.map((item) => (item.id === entry.id ? next : item))
+      : [...journal.reviews, next],
   );
 };
 
-$("schedule-add").onclick = () => editWork("schedule");
-$("review-add").onclick = () => editWork("reviews");
+$("review-add").onclick = () => editReview();
 $("work-cancel").onclick = () => dialog.close();
 $("work-delete").onclick = () => {
-  const { key, entry } = editingWork;
-  if (confirm(`‘${entry.title}’을 삭제할까요?`))
-    saveWork(journal[key].filter((item) => item.id !== entry.id));
+  if (!mayWrite) return;
+  const entry = editingReview;
+  if (entry && confirm(`‘${entry.title}’을 삭제할까요?`))
+    saveReviews(journal.reviews.filter((item) => item.id !== entry.id));
 };
-$("schedule-filter").onchange = renderWork;
 window.addEventListener("storage", (event) => {
   if (event.key === CONTENT_KEY || event.key === null) renderWork();
 });
