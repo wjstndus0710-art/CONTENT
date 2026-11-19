@@ -120,7 +120,7 @@
   const sameMonth = (d, m) => d && d.getFullYear() === m.getFullYear() && d.getMonth() === m.getMonth();
   const DOW = ['일', '월', '화', '수', '목', '금', '토'];
 
-  const divInfo = (key) => divisionsList().find((d) => d.key === key) || { key, icon: '' };
+  const divInfo = (key) => knownCategory(key) || divisionsList().find((d) => d.key === key) || { key, icon: '' };
   // 색을 줄이기 위해 사업부는 색 대신 아이콘과 이름으로 구분한다.
   const divColor = () => 'var(--g2)';
   const divLabel = (key) => (key ? `${divInfo(key).icon} ${key}`.trim() : '–');
@@ -160,6 +160,8 @@
   function normDivision(v) {
     const s = String(v || '').replace(/^[^\p{L}\p{N}]+/u, '').trim(); // 앞의 이모지 제거
     if (!s) return '';
+    const category = knownCategory(s);
+    if (category) return category.key;
     const hit = divisionsList().find((d) => d.key.toLowerCase() === s.toLowerCase());
     return hit ? hit.key : s;
   }
@@ -270,8 +272,23 @@
   const uniq = (vals) => [...new Set(vals.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
   function allDivisions() {
     const list = divisionsList();
-    const extra = uniq(items.map((i) => i.division)).filter((k) => !list.some((d) => d.key === k));
-    return [...list.map((d) => d.key), ...extra];
+    const configured = [...new Set(list.map((d) => knownCategory(d.key)?.key || d.key))];
+    const extra = uniq(items.map((i) => i.division)).filter((key) => !configured.includes(key));
+    return [...configured, ...extra];
+  }
+  function fillDivisionEditor(select) {
+    const keys = new Set([...CONTENT_CATEGORIES, ...allDivisions().map(key => normDivision(key))]);
+    const options = [...keys].map(key => {
+      const option = new Option(divLabel(key), key);
+      const category = knownCategory(key);
+      if (category) {
+        option.style.backgroundColor = category.highlight;
+        option.style.color = '#212c3a';
+      }
+      return option;
+    });
+    if (mayWrite) options.push(new Option('+ 사업부 추가…', '__add__'));
+    select.replaceChildren(...options);
   }
   function refreshFilterOptions() {
     const fill = (sel, values, label, show = (v) => v) => {
@@ -802,8 +819,8 @@
     ui.editingId = it ? it.id : null;
     $('#editor-title').textContent = it ? (mayWrite ? '콘텐츠 편집' : '콘텐츠 상세') : '새 콘텐츠';
     $('#btn-delete').hidden = !it;
-    form.division.innerHTML = allDivisions().map((k) => `<option value="${esc(k)}">${esc(divLabel(k))}</option>`).join('') + '<option value="__add__">+ 사업부 추가…</option>';
-    const v = it || normalize({ category: $('#f-category').value, division: $('#f-division').value || divisionsList()[0].key, owner: items[0]?.owner || '', channels: Object.fromEntries(CHANNELS.map((c) => [c, '미작성'])), ...preset });
+    fillDivisionEditor(form.division);
+    const v = it || normalize({ category: $('#f-category').value, division: $('#f-division').value || allDivisions()[0], owner: items[0]?.owner || '', channels: Object.fromEntries(CHANNELS.map((c) => [c, '미작성'])), ...preset });
     ['division', 'title', 'category', 'mainKeyword', 'naver', 'subKeywords', 'sourceChannel', 'publishDate', 'stage', 'publishUrl', 'result', 'learning', 'owner', 'notes'].forEach((k) => { form[k].value = v[k] || ''; });
     CHANNELS.forEach((c) => { form['ch:' + c].value = v.channels[c] || ''; });
     openGrowthFields(v, preset.section);
@@ -1554,7 +1571,7 @@
     const counts = {};
     items.forEach((i) => { counts[i.division] = (counts[i.division] || 0) + 1; });
     $('#div-list').innerHTML = divisionsList().map((d) => {
-      const n = counts[d.key] || 0;
+      const n = counts[normDivision(d.key)] || 0;
       return `<li><span class="div-name">${esc(d.icon)} ${esc(d.key)}</span><span class="muted">콘텐츠 ${n}건</span>
         <button type="button" class="btn btn-ghost btn-sm" data-del-div="${esc(d.key)}" ${n ? `disabled title="이 사업부를 쓰는 콘텐츠 ${n}건이 있어 삭제할 수 없습니다"` : ''}>삭제</button></li>`;
     }).join('');
@@ -1578,13 +1595,13 @@
     if (!name) return fail('사업부 이름을 입력하세요.');
     if (!/^[\p{L}\p{N}]/u.test(name)) return fail('이름은 글자나 숫자로 시작해야 합니다.');
     if (name.length > 30) return fail('이름은 30자 이내로 입력하세요.');
-    if (allDivisions().some((k) => k.toLowerCase() === name.toLowerCase())) return fail(`‘${name}’은(는) 이미 있습니다.`);
+    if (knownCategory(name) || allDivisions().some((k) => k.toLowerCase() === name.toLowerCase())) return fail(`‘${name}’은(는) 이미 있습니다.`);
     setDivisions([...divisionsList(), { key: name, icon }]);
     render();
     toast(`사업부 ‘${name}’을(를) 추가했습니다.`);
     if (divReturn) {
       const sel = divReturn; divReturn = null;
-      sel.innerHTML = allDivisions().map((k) => `<option value="${esc(k)}">${esc(divLabel(k))}</option>`).join('') + '<option value="__add__">+ 사업부 추가…</option>';
+      fillDivisionEditor(sel);
       sel.value = name;
       $('#div-dialog').close();
       return;
@@ -1599,7 +1616,7 @@
     const key = b.dataset.delDiv;
     if (!(await ask(`사업부 ‘${key}’을(를) 목록에서 삭제할까요?`, '삭제'))) return;
     setDivisions(divisionsList().filter((d) => d.key !== key));
-    if ($('#f-division').value === key) $('#f-division').value = '';
+    if ($('#f-division').value === normDivision(key)) $('#f-division').value = '';
     render(); renderDivisionManager();
     toast(`사업부 ‘${key}’을(를) 삭제했습니다.`);
   });
