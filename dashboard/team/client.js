@@ -29,34 +29,8 @@
       location.replace(loginUrl + location.hash);
       return;
     }
-    const viewerToken =
-      netlify && new URLSearchParams(location.hash.slice(1)).get("view");
-    if (viewerToken) {
-      history.replaceState(null, "", location.pathname + location.search);
-      const opened = await fetch("/api/viewer-session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: viewerToken }),
-      });
-      if (!opened.ok) {
-        notify(
-          "읽기 링크를 열 수 없습니다. 관리자에게 새 링크를 요청해 주세요.",
-        );
-        return;
-      }
-    }
     notify("공유 기록을 불러오는 중입니다.");
     const response = await fetch(endpoint, { cache: "no-store" });
-    if (response.status === 401 && netlify) {
-      location.replace(loginUrl);
-      return;
-    }
-    if (response.status === 403 && netlify) {
-      notify("이 계정에는 팀 열람 권한이 없습니다.", "로그아웃", () =>
-        location.assign("/login.html?logout=1"),
-      );
-      return;
-    }
     if (!response.ok) throw new Error();
     const workspace = await response.json();
     let revision = workspace.revision;
@@ -126,7 +100,14 @@
         },
       },
     };
-    if (netlify && workspace.canWrite) initViewerShare();
+    if (netlify && !workspace.canWrite) {
+      for (const link of document.querySelectorAll(
+        'a[href="/login.html?logout=1"]',
+      )) {
+        link.href = loginUrl;
+        link.textContent = "관리자 로그인";
+      }
+    }
     document.body.classList.toggle("team-viewer", !workspace.canWrite);
     if (workspace.canWrite)
       window.addEventListener("beforeunload", (event) => {
@@ -190,97 +171,6 @@
       badge.textContent = "서버 공유 저장";
     document.body.classList.remove("team-loading");
     importOffer();
-  }
-
-  function initViewerShare() {
-    const trigger = document.getElementById("viewer-share");
-    if (!trigger) return;
-    const dialog = document.getElementById("viewer-share-dialog");
-    const status = document.getElementById("viewer-share-status");
-    const url = document.getElementById("viewer-share-url");
-    const create = document.getElementById("viewer-share-create");
-    const copy = document.getElementById("viewer-share-copy");
-    const disable = document.getElementById("viewer-share-disable");
-    let active = false;
-    let link = "";
-    const render = () => {
-      create.textContent = active ? "새 링크 만들기" : "링크 만들기";
-      disable.hidden = !active;
-      copy.hidden = url.hidden = !link;
-      url.value = link;
-    };
-
-    async function request(method) {
-      const response = await fetch("/api/viewer-link", {
-        method,
-        cache: "no-store",
-      });
-      if (!response.ok) throw new Error();
-      return response.json();
-    }
-
-    function run(action) {
-      return async () => {
-        create.disabled = disable.disabled = true;
-        status.textContent = "";
-        try {
-          await action();
-          render();
-        } catch {
-          status.textContent =
-            "공유 링크 설정을 불러오거나 저장하지 못했습니다.";
-        } finally {
-          create.disabled = disable.disabled = false;
-        }
-      };
-    }
-
-    trigger.hidden = false;
-    trigger.onclick = () => {
-      dialog.showModal();
-      void run(async () => {
-        active = (await request("GET")).active;
-        if (!active) link = "";
-        status.textContent = active
-          ? "읽기 링크가 활성화되어 있습니다."
-          : "아직 만든 링크가 없습니다.";
-      })();
-    };
-    create.onclick = run(async () => {
-      if (
-        active &&
-        !confirm("새 링크를 만들면 이전 링크는 닫힙니다. 계속할까요?")
-      )
-        return;
-      const { token } = await request("POST");
-      const shared = new URL("/", location.origin);
-      shared.hash = new URLSearchParams({ view: token }).toString();
-      link = shared.href;
-      active = true;
-      status.textContent = "팀장님께 전달할 링크를 복사하세요.";
-    });
-    disable.onclick = run(async () => {
-      await request("DELETE");
-      active = false;
-      link = "";
-      status.textContent = "읽기 링크를 닫았습니다.";
-    });
-    copy.onclick = async () => {
-      try {
-        await navigator.clipboard.writeText(link);
-        status.textContent = "읽기 링크를 복사했습니다.";
-      } catch {
-        url.focus();
-        url.select();
-        status.textContent = "선택된 링크를 복사해 주세요.";
-      }
-    };
-  }
-
-  if (document.documentElement.dataset.auth === "netlify") {
-    window.addEventListener("hashchange", () => {
-      if (new URLSearchParams(location.hash.slice(1)).has("view")) location.reload();
-    });
   }
 
   connect().catch(() => {

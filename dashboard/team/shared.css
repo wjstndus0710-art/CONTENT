@@ -44,12 +44,3 @@ body.team-loading > :not(#team-storage-status):not(script) {
 body > [data-netlify-deploy-id][data-netlify-site-id][data-vcs] {
   display: none !important;
 }
-
-#viewer-share-url {
-  width: 100%;
-  margin: 12px 0;
-}
-#viewer-share-dialog .work-head {
-  justify-content: flex-start;
-  flex-wrap: wrap;
-}

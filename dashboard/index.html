@@ -22,7 +22,6 @@
           >로그아웃</a
         >
         <span class="preview-pill" id="store-pill">이 브라우저에 저장</span
-        ><button class="secondary" id="viewer-share" hidden>읽기 링크</button
         ><button class="secondary" id="backup">백업 저장</button
         ><button class="secondary" id="restore">백업 복원</button
         ><input
@@ -146,39 +145,6 @@
           <p id="copy-status" class="hint" role="status"></p>
         </article>
       </section>
-      <dialog id="viewer-share-dialog" aria-labelledby="viewer-share-title">
-        <div class="work-card">
-          <h2 id="viewer-share-title">읽기 전용 공유 링크</h2>
-          <p>링크를 받은 사람은 로그인 없이 일지와 콘텐츠를 볼 수 있습니다.</p>
-          <p id="viewer-share-status" role="status"></p>
-          <input
-            id="viewer-share-url"
-            aria-label="읽기 전용 링크"
-            readonly
-            hidden
-          />
-          <div class="work-head">
-            <button id="viewer-share-create" type="button">링크 만들기</button>
-            <button
-              id="viewer-share-copy"
-              type="button"
-              class="secondary"
-              hidden
-            >
-              링크 복사
-            </button>
-            <button
-              id="viewer-share-disable"
-              type="button"
-              class="secondary"
-              hidden
-            >
-              링크 끄기
-            </button>
-            <form method="dialog"><button class="secondary">닫기</button></form>
-          </div>
-        </div>
-      </dialog>
       <dialog id="work-dialog">
         <form id="work-form">
           <h2 id="work-title"></h2>

@@ -16,12 +16,6 @@ const journalKey = "marketing-journal-local-v1";
 function memoryStore(initial = {}) {
   const records = new Map(Object.entries(initial));
   return {
-    async setJSON(key, data) {
-      records.set(key, { data });
-    },
-    async delete(key) {
-      records.delete(key);
-    },
     async get(key) {
       return records.get(key)?.data ?? null;
     },
@@ -57,15 +51,7 @@ function setup(previousDeploys = {}) {
     "blogStats/old": { data: { id: "old", views: 1 } },
     "settings/divisions": { data: { id: "divisions", list: [] } },
   });
-  const call = (
-    host,
-    user,
-    method = "GET",
-    data,
-    origin = host,
-    path = "/api/workspace",
-    cookie = "",
-  ) => {
+  const call = (host, user, method = "GET", data, origin = host) => {
     const handler = createHandler({
       identity: async () => user,
       env,
@@ -79,12 +65,11 @@ function setup(previousDeploys = {}) {
         previousDeploys[deployID] ?? memoryStore(),
     });
     return handler(
-      new Request(host + path, {
+      new Request(host + "/api/workspace", {
         method,
         headers: {
           Origin: origin,
           "Content-Type": "application/json",
-          Cookie: cookie,
         },
         body: data ? JSON.stringify(data) : undefined,
       }),
@@ -93,22 +78,26 @@ function setup(previousDeploys = {}) {
   return { call, legacyStore };
 }
 
-test("팀원에게 읽기 권한만 있고 미승인 계정은 접근할 수 없다", async () => {
+test("로그인 없이 읽을 수 있고 관리자 계정만 저장할 수 있다", async () => {
   const { call } = setup();
-  assert.equal((await call(production, null)).status, 401);
-  assert.equal(
-    (await call(production, { email: "other@example.invalid", roles: [] }))
-      .status,
-    403,
-  );
-  const data = await (await call(production, viewer)).json();
+  const response = await call(production, null);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  const data = await response.json();
   assert.equal(data.canWrite, false);
   assert.equal(data.records[contentKey].length, 2);
-  assert.equal(
-    (await call(production, viewer, "PUT", { revision: null, records: {} }))
-      .status,
-    403,
-  );
+  for (const user of [
+    null,
+    viewer,
+    { email: "other@example.invalid", roles: ["admin"] },
+  ]) {
+    assert.equal(
+      (await call(production, user, "PUT", { revision: null, records: {} }))
+        .status,
+      403,
+    );
+  }
+  assert.equal((await (await call(production, owner)).json()).canWrite, true);
 });
 
 test("운영 첫 저장은 기존 콘텐츠를 보존하고 미리보기와 분리한다", async () => {
@@ -192,97 +181,5 @@ test("이전 미리보기의 기록을 같은 미리보기 주소에 복원하�
   assert.deepEqual(
     (await (await call(preview, viewer)).json()).records,
     updated.records,
-  );
-});
-
-test("관리자가 발급한 읽기 링크는 로그인 없이 열리며 수정은 차단되고 폐기할 수 있다", async () => {
-  const { call } = setup();
-  const linkPath = "/api/viewer-link";
-  const sessionPath = "/api/viewer-session";
-  assert.equal(
-    (await call(preview, null, "POST", undefined, preview, linkPath)).status,
-    403,
-  );
-  assert.equal(
-    (await call(preview, viewer, "POST", undefined, preview, linkPath)).status,
-    403,
-  );
-  assert.equal(
-    (
-      await call(
-        preview,
-        owner,
-        "POST",
-        undefined,
-        "https://other.invalid",
-        linkPath,
-      )
-    ).status,
-    403,
-  );
-  const { token } = await (
-    await call(preview, owner, "POST", undefined, preview, linkPath)
-  ).json();
-  assert.match(token, /^[A-Za-z0-9_-]{43}$/);
-  const opened = await call(
-    preview,
-    null,
-    "POST",
-    { token },
-    preview,
-    sessionPath,
-  );
-  assert.equal(opened.status, 204);
-  const cookieHeader = opened.headers.get("set-cookie");
-  assert.match(cookieHeader, /HttpOnly; Secure; SameSite=Lax/);
-  const cookie = cookieHeader.split(";")[0];
-  const records = await (
-    await call(
-      preview,
-      null,
-      "GET",
-      undefined,
-      preview,
-      "/api/workspace",
-      cookie,
-    )
-  ).json();
-  assert.equal(records.canWrite, false);
-  assert.equal(
-    (
-      await call(
-        preview,
-        null,
-        "PUT",
-        { revision: null, records: {} },
-        preview,
-        "/api/workspace",
-        cookie,
-      )
-    ).status,
-    403,
-  );
-  assert.equal(
-    (await call(production, null, "POST", { token }, production, sessionPath))
-      .status,
-    403,
-  );
-  assert.equal(
-    (await call(preview, owner, "DELETE", undefined, preview, linkPath)).status,
-    200,
-  );
-  assert.equal(
-    (
-      await call(
-        preview,
-        null,
-        "GET",
-        undefined,
-        preview,
-        "/api/workspace",
-        cookie,
-      )
-    ).status,
-    401,
   );
 });
