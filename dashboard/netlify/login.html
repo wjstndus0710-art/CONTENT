@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>마케팅 일지 로그인</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/login.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <div
+        class="card work-card"
+        style="max-width: 460px; width: 100%; margin: auto"
+      >
+        <h1 id="auth-title">마케팅 일지 로그인</h1>
+        <form id="work-form" method="post" action="/api/journal-auth">
+          <label id="email-field"
+            >이메일<input
+              name="email"
+              type="email"
+              autocomplete="username"
+              required
+          /></label>
+          <label id="password-field"
+            >비밀번호<input
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              required
+          /></label>
+          <p id="auth-status" role="status"></p>
+          <div class="work-head">
+            <button id="auth-submit">로그인</button>
+            <a href="./">마케팅 일지</a>
+          </div>
+        </form>
+      </div>
+    </main>
+  </body>
+</html>

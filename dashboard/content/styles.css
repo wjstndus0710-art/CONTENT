@@ -150,7 +150,6 @@ h2 { font-size: 15px; font-weight: 600; margin: 0; }
   display: flex; flex-direction: column;
 }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 19px; padding: 0 22px 20px; letter-spacing: -0.02em; }
-.brand-mark { color: var(--side-mark); }
 .profile { margin: 0 14px 14px; padding: 14px; border-radius: 14px; background: var(--side-box); border: 1px solid var(--border); }
 .profile-name { font-weight: 700; margin-bottom: 8px; }
 .profile-stats div { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-2); padding: 2px 0; }
@@ -508,10 +507,7 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 @media (max-width: 1280px) {
-  .app, .cell-meta { display: block; font-size: 11px; color: var(--muted); font-weight: 400; margin-top: 2px; }
-.title-cell:hover .cell-meta { text-decoration: none; }
-.cell-meta .status { font-size: 11px; white-space: normal; }
-.app.no-side { grid-template-columns: 210px minmax(0, 1fr); }
+  .app, .app.no-side { grid-template-columns: 210px minmax(0, 1fr); }
   .rightbar { grid-column: 2; position: static; height: auto; border-left: 0; border-top: 1px solid var(--border); display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; padding: 24px 32px; }
   .promo, .side-block { margin: 0; }
 }
@@ -519,13 +515,13 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
   .grid-2, .hero { grid-template-columns: 1fr; }
 }
 @media (max-width: 760px) {
-  .app, .cell-meta { display: block; font-size: 11px; color: var(--muted); font-weight: 400; margin-top: 2px; }
-.title-cell:hover .cell-meta { text-decoration: none; }
-.cell-meta .status { font-size: 11px; white-space: normal; }
-.app.no-side { display: block; }
+  .app, .app.no-side { display: block; }
   .sidebar { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--border); padding: 14px 0 10px; }
   .brand { padding: 0 16px 10px; }
-  .profile, .nav-section, .nav-sub, .theme-btn { display: none; }
+  .profile, .nav-section, .theme-btn { display: none; }
+  .nav-sub { flex-direction: row; }
+  .nav-sub button { white-space: nowrap; padding: 8px 12px; }
+  .content-portal-links { flex: none; }
   .nav { flex-direction: row; overflow-x: auto; padding: 0 8px; }
   .tab { padding: 8px 12px; border-radius: 10px; white-space: nowrap; }
   .tab.is-active { box-shadow: none; }
@@ -542,3 +538,30 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
 }
 .blog-subs .delta { align-self: flex-start; }
 .div-form .btn-primary { justify-content: center; padding: 10px; border-radius: 12px; }
+
+.content-portal-links { display:flex; flex-wrap:wrap; gap:8px 14px; padding: 6px 12px; }
+.content-portal-links a, .head-actions a { color:var(--accent-text); font-size:14px; }
+.content-migration { margin: 10px 12px; color: var(--text-2); font-size: 13px; line-height: 1.5; }
+.content-migration summary { cursor: pointer; }
+.content-migration p { margin: 6px 0; }
+.content-migration a, #related-reviews a { color: var(--accent-text); }
+.growth-editor { padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
+.growth-editor summary { cursor: pointer; font-weight: 650; }
+.locale-fields, .ranking-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+.locale-fields { border: 1px solid var(--border); border-radius: 8px; }
+.rank-actions, #rank-history li { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-block: 10px; }
+#rank-history { list-style: none; padding: 0; }
+#rank-history:empty { display: none; }
+.ranking-fields .rank-absence { display: flex; flex-direction: row; align-items: center; }
+#view-growth > .card + .card { margin-top: 16px; }
+@media (max-width: 520px) {
+  .locale-fields, .ranking-fields { grid-template-columns: 1fr; }
+}
+
+.head-actions { flex-wrap: wrap; }
+.status-summary-body { padding: 0 20px 16px; }
+.status-summary-body > p { color: var(--text-2); }
+.status-summary-body section { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; overflow-wrap: anywhere; }
+.status-summary-body h3 { font-size: 14px; margin: 0 0 6px; }
+.status-summary-body ul { margin: 0; padding-inline-start: 18px; }
+.status-summary-body section p { margin: 0; color: var(--text-2); }

@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>멀티채널 콘텐츠 운영</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">콘텐츠 운영관리</div>
+        <div class="profile">
+          <div class="profile-name">26 멀티채널 콘텐츠</div>
+          <div class="profile-stats" id="profile-stats"></div>
+          <div class="sync local" id="sync-status">이 브라우저에만 저장</div>
+        </div>
+        <nav class="nav" role="tablist">
+          <div class="content-portal-links">
+            <a href="../">마케팅 일지</a
+            ><a href="../monthly-report.html">월간 리포트</a>
+          </div>
+          <div class="nav-section">콘텐츠 관리</div>
+          <button class="tab is-active" data-view="dashboard" role="tab">
+            <span>▦</span> 대시보드
+          </button>
+          <button class="tab" data-view="list" role="tab">
+            <span>☰</span> 운영 현황
+          </button>
+          <button class="tab" data-view="calendar" role="tab">
+            <span>▤</span> 콘텐츠 캘린더
+          </button>
+          <button class="tab" data-view="keywords" role="tab">
+            <span>#</span> 키워드 관리
+          </button>
+          <button class="tab" data-view="growth" role="tab">
+            검색 노출 · 다국어
+          </button>
+          <button class="tab" data-view="blog" role="tab">
+            <span>↗</span> 블로그 성과
+          </button>
+          <div class="nav-section">데이터 관리</div>
+          <div class="nav-sub" id="menu-data">
+            <button data-action="manage-divisions" data-edit-only>
+              사업부 관리
+            </button>
+            <button data-action="import-file" data-edit-only>
+              엑셀/CSV 가져오기
+            </button>
+            <button data-action="import-stats" data-edit-only>
+              블로그 통계 가져오기
+            </button>
+            <button data-action="export-csv">CSV 내보내기</button>
+            <button data-action="export-json" data-edit-only>
+              백업 저장 (JSON)
+            </button>
+            <button data-action="import-json" data-edit-only>
+              백업 불러오기
+            </button>
+            <button data-action="load-seed" data-edit-only>
+              처음 데이터로 되돌리기
+            </button>
+            <button data-action="clear-all" data-edit-only>전체 삭제</button>
+          </div>
+        </nav>
+        <details class="content-migration">
+          <summary>기존 기록 옮기기</summary>
+          <p>
+            기존 사이트에서 백업 저장(JSON)을 선택한 뒤 여기서 백업 불러오기로
+            가져오세요.
+          </p>
+          <a
+            href="https://inspiencontent.netlify.app/"
+            target="_blank"
+            rel="noopener noreferrer"
+            >기존 콘텐츠 사이트 열기</a
+          >
+        </details>
+        <button class="theme-btn" id="btn-theme" aria-label="테마 전환">
+          ◐ 라이트 / 다크
+        </button>
+      </aside>
+
+      <div class="main-col">
+        <header class="page-head">
+          <div>
+            <div class="greet"><b>26_멀티채널 콘텐츠 운영관리</b></div>
+            <div class="muted" id="today-label"></div>
+          </div>
+          <div class="head-actions">
+            <a href="/signout-with-chatgpt" target="_top">로그아웃</a>
+            <button class="btn" id="btn-status-summary">
+              콘텐츠 상태 요약
+            </button>
+            <button class="btn btn-primary" id="btn-add" data-edit-only>
+              + 새 콘텐츠
+            </button>
+          </div>
+        </header>
+
+        <section class="filters" aria-label="필터">
+          <input
+            type="search"
+            id="f-search"
+            placeholder="주제·키워드·비고 검색"
+          />
+          <select id="f-division">
+            <option value="">모든 사업부/서비스</option>
+          </select>
+          <select id="f-category" aria-label="콘텐츠 카테고리 필터">
+            <option value="">모든 카테고리</option>
+          </select>
+          <select id="f-source">
+            <option value="">모든 원문 채널</option>
+          </select>
+          <select id="f-progress">
+            <option value="">모든 진행률</option>
+            <option value="done">배포 완료 (100%)</option>
+            <option value="partial">배포 중</option>
+            <option value="none">미배포 (0%)</option>
+          </select>
+          <select id="f-owner">
+            <option value="">모든 담당자</option>
+          </select>
+          <select id="f-period">
+            <option value="all" selected>전체 기간</option>
+            <option value="month">이번 달</option>
+            <option value="last-month">지난 달</option>
+            <option value="90">최근 90일</option>
+            <option value="year">올해</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" id="f-reset">초기화</button>
+        </section>
+
+        <main>
+          <!-- 대시보드 -->
+          <section class="view is-active" id="view-dashboard">
+            <div class="hero" id="hero"></div>
+            <div class="card strip" id="strip"></div>
+
+            <div class="grid-2">
+              <article class="card">
+                <header class="card-head">
+                  <h2>채널별 배포 현황</h2>
+                  <span class="muted">콘텐츠 수 · 상태별</span>
+                </header>
+                <div class="legend" id="channel-legend"></div>
+                <div id="chart-channel" class="chart"></div>
+              </article>
+              <article class="card">
+                <header class="card-head">
+                  <h2>사업부/서비스별 콘텐츠</h2>
+                  <span class="muted">막대를 누르면 운영 현황으로 이동</span>
+                </header>
+                <div id="chart-division" class="chart"></div>
+              </article>
+            </div>
+
+            <div class="grid-2">
+              <article class="card">
+                <header class="card-head">
+                  <h2>월별 원문 발행 수</h2>
+                  <span class="muted">최근 6개월</span>
+                </header>
+                <div id="chart-monthly" class="chart"></div>
+              </article>
+              <article class="card">
+                <header class="card-head">
+                  <h2>네이버 노출</h2>
+                  <span class="muted">메인 키워드 검색 노출 여부</span>
+                </header>
+                <div id="naver" class="pipeline"></div>
+              </article>
+            </div>
+
+            <article class="card grid-1">
+              <header class="card-head">
+                <h2>
+                  배포가 남은 콘텐츠
+                  <span class="muted" id="pending-count"></span>
+                </h2>
+                <span class="muted">상태 칩을 누르면 다음 단계로 바뀝니다</span>
+              </header>
+              <div id="pending"></div>
+            </article>
+          </section>
+
+          <!-- 운영 현황 -->
+          <section class="view" id="view-list">
+            <article class="card">
+              <header class="card-head">
+                <h2>
+                  멀티채널 콘텐츠 운영 현황
+                  <span class="muted" id="list-count"></span>
+                </h2>
+                <span class="muted"
+                  >열 제목: 정렬 · 주제: 편집 · 상태 칩: 다음 단계로 변경</span
+                >
+              </header>
+              <div class="table-wrap">
+                <table class="table matrix" id="content-table">
+                  <thead>
+                    <tr id="matrix-head"></tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+              <p class="empty" id="list-empty" hidden>
+                조건에 맞는 콘텐츠가 없습니다.
+              </p>
+            </article>
+          </section>
+
+          <!-- 캘린더 -->
+          <section class="view" id="view-calendar">
+            <article class="card">
+              <header class="card-head">
+                <div class="cal-nav">
+                  <button
+                    class="btn btn-ghost btn-sm"
+                    id="cal-prev"
+                    aria-label="이전 달"
+                  >
+                    ‹
+                  </button>
+                  <h2 id="cal-title"></h2>
+                  <button
+                    class="btn btn-ghost btn-sm"
+                    id="cal-next"
+                    aria-label="다음 달"
+                  >
+                    ›
+                  </button>
+                  <button class="btn btn-ghost btn-sm" id="cal-today">
+                    오늘
+                  </button>
+                </div>
+                <span class="muted"
+                  >원문 발행일 기준 · 빈 날짜를 더블클릭하면 추가</span
+                >
+              </header>
+              <div class="cal-legend" id="cal-legend"></div>
+              <div class="calendar" id="calendar"></div>
+            </article>
+          </section>
+
+          <!-- 키워드 -->
+          <section class="view" id="view-keywords">
+            <div class="card strip" id="kw-strip"></div>
+            <article class="card">
+              <header class="card-head">
+                <h2>
+                  멀티채널 키워드 관리 <span class="muted" id="kw-count"></span>
+                </h2>
+                <span class="muted"
+                  >같은 메인 키워드를 쓰는 콘텐츠는 ‘중복’으로 표시</span
+                >
+              </header>
+              <div class="table-wrap">
+                <table class="table" id="kw-table">
+                  <thead>
+                    <tr>
+                      <th>메인 키워드</th>
+                      <th>네이버 노출</th>
+                      <th>서브 키워드</th>
+                      <th>사업부/서비스</th>
+                      <th>콘텐츠 주제</th>
+                      <th>원문 발행일</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </article>
+          </section>
+          <!-- 블로그 성과 -->
+          <section class="view" id="view-growth">
+            <article class="card">
+              <header class="card-head"><h2>검색 노출 현황</h2></header>
+              <p class="muted">
+                네이버·Google에서 확인한 순위를 키워드와 검색 환경별로
+                기록합니다.
+              </p>
+              <div class="table-wrap">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>콘텐츠</th>
+                      <th>검색어</th>
+                      <th>검색 환경</th>
+                      <th>최근 순위</th>
+                      <th>변화</th>
+                      <th>확인일</th>
+                    </tr>
+                  </thead>
+                  <tbody id="ranking-overview"></tbody>
+                </table>
+              </div>
+            </article>
+            <article class="card">
+              <header class="card-head"><h2>영어·일본어 제작 현황</h2></header>
+              <div class="table-wrap">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>원문</th>
+                      <th>영어</th>
+                      <th>일본어</th>
+                    </tr>
+                  </thead>
+                  <tbody id="localization-overview"></tbody>
+                </table>
+              </div>
+            </article>
+          </section>
+          <section class="view" id="view-blog">
+            <div class="blog-toolbar">
+              <div class="seg" id="stats-metric" role="group" aria-label="지표">
+                <button data-metric="views" class="is-on">조회수</button
+                ><button data-metric="visitors">순방문자수</button
+                ><button data-metric="dwell">체류시간</button
+                ><button data-metric="posts">포스팅수</button>
+              </div>
+              <div class="seg" id="stats-range" role="group" aria-label="기간">
+                <button data-range="12" class="is-on">12개월</button
+                ><button data-range="24">24개월</button
+                ><button data-range="0">전체</button>
+              </div>
+              <span class="spacer"></span>
+              <select
+                id="stats-month"
+                class="select-month"
+                aria-label="기준 월"
+              ></select>
+              <button class="btn btn-primary" id="btn-add-stat" data-edit-only>
+                + 월 통계 입력
+              </button>
+            </div>
+            <div class="hero" id="blog-cards"></div>
+            <article class="card grid-1">
+              <header class="card-head">
+                <h2 id="trend-title">조회수 추이</h2>
+                <span class="muted" id="trend-sub"></span>
+              </header>
+              <div class="legend" id="trend-legend"></div>
+              <div id="chart-trend" class="chart"></div>
+            </article>
+            <article class="card grid-1">
+              <header class="card-head">
+                <h2>
+                  조회수 순위 TOP5 <span class="muted" id="top-month"></span>
+                </h2>
+                <span class="muted"
+                  >연속으로 TOP5에 든 글은 개월 수를 표시</span
+                >
+              </header>
+              <div class="tops" id="tops"></div>
+            </article>
+            <article class="card">
+              <header class="card-head">
+                <h2>월별 통계 · 증감률</h2>
+                <span class="muted"
+                  >행을 누르면 수정 · 전월/전년 = 전월 대비, 전년 동월
+                  대비</span
+                >
+              </header>
+              <div class="table-wrap">
+                <table class="table" id="period-table"></table>
+              </div>
+            </article>
+          </section>
+        </main>
+      </div>
+
+      <aside class="rightbar">
+        <div class="promo" id="promo"></div>
+        <section class="side-block">
+          <h3>채널 배포 할 일 <span class="muted" id="todo-count"></span></h3>
+          <ul id="todo" class="upcoming"></ul>
+        </section>
+        <section class="side-block">
+          <h3>블로그 성과 <span class="muted" id="side-blog-sub"></span></h3>
+          <ul id="side-blog" class="side-list"></ul>
+        </section>
+        <section class="side-block">
+          <h3>사업부별 평균 진행률</h3>
+          <ul id="divisions" class="side-list"></ul>
+        </section>
+      </aside>
+    </div>
+
+    <dialog id="status-summary" aria-labelledby="status-summary-title">
+      <header class="modal-head">
+        <h2 id="status-summary-title">콘텐츠 상태 요약</h2>
+      </header>
+      <div class="status-summary-body">
+        <p id="status-summary-scope"></p>
+        <div id="status-summary-content"></div>
+      </div>
+      <form method="dialog" class="modal-foot">
+        <button class="btn" autofocus>닫기</button>
+      </form>
+    </dialog>
+
+    <!-- 편집 모달 -->
+    <dialog id="editor">
+      <form method="dialog" id="editor-form">
+        <header class="modal-head">
+          <h2 id="editor-title">새 콘텐츠</h2>
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm"
+            data-close
+            aria-label="닫기"
+          >
+            ✕
+          </button>
+        </header>
+        <div class="form-grid">
+          <label
+            >사업부/서비스<select name="division" id="e-division"></select
+          ></label>
+          <label
+            >담당자<input name="owner" id="e-owner" list="dl-owner"
+          /></label>
+          <label class="span-2"
+            >콘텐츠 주제 *<input name="title" id="e-title" required
+          /></label>
+          <label
+            >콘텐츠 카테고리<select name="category" id="e-category">
+              <option value="">미분류</option>
+            </select></label
+          >
+          <label>메인 키워드<input name="mainKeyword" id="e-main" /></label>
+          <label
+            >네이버 노출
+            <select name="naver" id="e-naver">
+              <option value="">미확인</option>
+              <option>Y</option>
+              <option>N</option>
+              <option>뉴스레터만</option>
+            </select>
+          </label>
+          <label class="span-2"
+            >서브 키워드 (쉼표 구분)<input name="subKeywords" id="e-sub"
+          /></label>
+          <label
+            >원문 채널<input
+              name="sourceChannel"
+              id="e-source"
+              list="dl-source"
+          /></label>
+          <label
+            >원문 발행일<input type="date" name="publishDate" id="e-date"
+          /></label>
+          <label
+            >제작 단계<select name="stage">
+              <option value="">미지정</option>
+              <option>기획</option>
+              <option>초안</option>
+              <option>검수</option>
+              <option>발행</option>
+            </select></label
+          >
+          <label
+            >발행 링크<input type="url" name="publishUrl" maxlength="2048"
+          /></label>
+          <label
+            >핵심 성과<input
+              name="result"
+              maxlength="240"
+              placeholder="예: 뉴스레터 클릭률 4.2%"
+          /></label>
+          <label
+            >다음 제작에 반영할 점<input name="learning" maxlength="500"
+          /></label>
+          <fieldset class="span-2 metrics" id="e-channels">
+            <legend>
+              채널별 배포 상태
+              <span class="muted"
+                >(진행률 = 네이버·홈페이지·티스토리·카카오 발행완료 수 ÷
+                4)</span
+              >
+            </legend>
+          </fieldset>
+          <a
+            class="span-2"
+            id="published-link"
+            target="_blank"
+            rel="noopener noreferrer"
+            hidden
+            >발행 링크 열기</a
+          >
+          <details class="span-2 growth-editor" id="localization-editor">
+            <summary>영어·일본어 버전</summary>
+            <div id="locale-fields"></div>
+          </details>
+          <details class="span-2 growth-editor" id="ranking-editor">
+            <summary>검색 노출 순위 이력</summary>
+            <div class="ranking-fields">
+              <label
+                >검색엔진<select id="rank-engine">
+                  <option>네이버</option>
+                  <option>Google</option>
+                </select></label
+              >
+              <label
+                >검색 환경<select id="rank-market">
+                  <option>한국어 · 한국</option>
+                  <option>영어 · 미국</option>
+                  <option>일본어 · 일본</option>
+                </select></label
+              >
+              <label>검색어<input id="rank-keyword" maxlength="160" /></label>
+              <label>확인일<input id="rank-date" type="date" /></label>
+              <label
+                >순위<input
+                  id="rank-position"
+                  type="number"
+                  min="1"
+                  max="1000"
+                  step="1"
+              /></label>
+              <label class="rank-absence"
+                ><input type="checkbox" id="rank-absent" />미노출</label
+              >
+            </div>
+            <div class="rank-actions">
+              <a
+                id="rank-search"
+                href="https://search.naver.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                >검색 결과 열기</a
+              >
+              <button class="btn" type="button" id="rank-add">이력 추가</button>
+            </div>
+            <p class="muted" id="rank-message" role="status"></p>
+            <ul id="rank-history"></ul>
+          </details>
+          <div class="span-2" id="related-reviews" hidden></div>
+          <label class="span-2"
+            >비고<textarea name="notes" id="e-notes" rows="2"></textarea>
+          </label>
+        </div>
+        <footer class="modal-foot">
+          <button type="button" class="btn btn-danger-ghost" id="btn-delete">
+            삭제
+          </button>
+          <span class="spacer"></span>
+          <button type="button" class="btn btn-ghost" data-close>취소</button>
+          <button type="submit" class="btn btn-primary" value="save">
+            저장
+          </button>
+        </footer>
+      </form>
+    </dialog>
+
+    <!-- 블로그 월 통계 입력 -->
+    <dialog id="stat-editor">
+      <form method="dialog" id="stat-form">
+        <header class="modal-head">
+          <h2 id="stat-title">블로그 월 통계</h2>
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm"
+            data-close
+            aria-label="닫기"
+          >
+            ✕
+          </button>
+        </header>
+        <div class="form-grid">
+          <label
+            >블로그<input name="blog" id="s-blog" list="dl-blog" required
+          /></label>
+          <label
+            >월<input type="month" name="month" id="s-month" required
+          /></label>
+          <label
+            >조회수<input
+              type="number"
+              min="0"
+              name="views"
+              id="s-views"
+              inputmode="numeric"
+          /></label>
+          <label
+            >순방문자수<input
+              type="number"
+              min="0"
+              name="visitors"
+              id="s-visitors"
+              inputmode="numeric"
+          /></label>
+          <label
+            >체류시간 (시트와 같은 값)<input
+              type="number"
+              min="0"
+              step="0.01"
+              name="dwell"
+              id="s-dwell"
+              inputmode="decimal"
+          /></label>
+          <label
+            >포스팅수<input
+              type="number"
+              min="0"
+              name="posts"
+              id="s-posts"
+              inputmode="numeric"
+          /></label>
+          <label class="span-2"
+            >조회수 순위 TOP5 (한 줄에 제목 하나, 1위부터)<textarea
+              name="top"
+              id="s-top"
+              rows="5"
+            ></textarea>
+          </label>
+          <label class="span-2"
+            >메모<input
+              name="memo"
+              id="s-memo"
+              placeholder="예: 추석 연휴, 상위 노출 글 발생"
+          /></label>
+        </div>
+        <footer class="modal-foot">
+          <button
+            type="button"
+            class="btn btn-danger-ghost"
+            id="btn-delete-stat"
+          >
+            삭제
+          </button>
+          <span class="spacer"></span>
+          <button type="button" class="btn btn-ghost" data-close>취소</button>
+          <button type="submit" class="btn btn-primary" value="save">
+            저장
+          </button>
+        </footer>
+      </form>
+    </dialog>
+
+    <!-- Netlify 버전 로그인 -->
+    <!-- 사업부 관리 -->
+    <dialog id="div-dialog" class="div-dialog">
+      <div class="modal-head">
+        <h2>사업부/서비스 관리</h2>
+        <button
+          type="button"
+          class="btn btn-ghost btn-sm"
+          data-close
+          aria-label="닫기"
+        >
+          ✕
+        </button>
+      </div>
+      <div class="div-body">
+        <ul class="div-list" id="div-list"></ul>
+        <form id="div-form" class="div-form">
+          <label
+            >새 사업부 이름<input
+              id="div-name"
+              maxlength="30"
+              placeholder="예: EAI"
+              autocomplete="off"
+          /></label>
+          <fieldset class="div-icons">
+            <legend>아이콘</legend>
+            <div id="div-icons"></div>
+          </fieldset>
+          <p class="login-error" id="div-error" role="alert" hidden></p>
+          <button type="submit" class="btn btn-primary">추가</button>
+        </form>
+      </div>
+    </dialog>
+
+    <dialog id="confirm" class="confirm">
+      <form method="dialog">
+        <p id="confirm-msg"></p>
+        <footer class="modal-foot">
+          <span class="spacer"></span>
+          <button class="btn btn-ghost" id="confirm-cancel" value="cancel">
+            취소
+          </button>
+          <button class="btn btn-primary" id="confirm-ok" value="ok">
+            확인
+          </button>
+        </footer>
+      </form>
+    </dialog>
+
+    <datalist id="dl-owner"></datalist>
+    <datalist id="dl-source"></datalist>
+    <datalist id="dl-blog"></datalist>
+    <input type="file" id="file-input" hidden />
+    <div class="tooltip" id="tooltip" role="tooltip" hidden></div>
+    <div class="toast" id="toast" hidden></div>
+
+    <script src="../report-data.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

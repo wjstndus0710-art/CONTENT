@@ -1,0 +1,44 @@
+body.team-loading > :not(#team-storage-status):not(script) {
+  visibility: hidden;
+}
+#team-storage-status {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  z-index: 20;
+  color: #26354c;
+  background: #f1f6ff;
+  border: 1px solid #cbd9eb;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font:
+    14px/1.45 system-ui,
+    sans-serif;
+}
+#team-storage-status button {
+  margin-inline-start: 8px;
+}
+.team-viewer [data-edit-only],
+.team-viewer #add,
+.team-viewer #backup,
+.team-viewer #restore,
+.team-viewer #store-pill,
+.team-viewer #schedule-add,
+.team-viewer #review-add,
+.team-viewer .day-card .add,
+.team-viewer .day-card .task-actions,
+.team-viewer .day-head .link,
+.team-viewer #focus-status,
+.team-viewer #schedule-list button,
+.team-viewer #review-list button,
+.team-viewer #editor button[type="submit"],
+.team-viewer #btn-delete,
+.team-viewer #rank-add,
+.team-viewer #rank-history button,
+.team-viewer #stat-form button[type="submit"],
+.team-viewer #btn-delete-stat,
+.team-viewer #e-division option[value="__add__"],
+.team-viewer #ranking-editor .ranking-fields,
+.team-viewer #ranking-editor .rank-actions {
+  display: none !important;
+}

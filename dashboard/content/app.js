@@ -5,7 +5,7 @@
   'use strict';
 
   // ---------- 설정 ----------
-  const STORAGE_KEY = 'content-dashboard:v2';
+  const STORAGE_KEY = CONTENT_KEY;
   // 기본 사업부: 시트의 드롭다운 순서 + EAI. ‘사업부 관리’에서 바꾸면 settings/divisions 문서에 목록 전체를 저장한다.
   const BASE_DIVISIONS = [
     { key: 'Rtail-X', icon: '📦' },
@@ -21,12 +21,13 @@
     id: String(r.id || ''),
     list: (Array.isArray(r.list) ? r.list : []).map((d) => ({ key: String(d.key || '').trim(), icon: String(d.icon || '') })).filter((d) => d.key),
   });
-  let settings = (() => { try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '[]').map(normSetting); } catch (e) { return []; } })();
+  let settings = (() => { try { return JSON.parse(recordStorage.getItem(SETTINGS_KEY) || '[]').map(normSetting); } catch (e) { return []; } })();
   function divisionsList() {
     const doc = settings.find((d) => d.id === 'divisions');
     return doc && doc.list.length ? doc.list : BASE_DIVISIONS;
   }
-  const CHANNELS = ['네이버', '홈페이지', '티스토리', '카카오', '인스타'];
+  const CHANNELS = ['네이버', '홈페이지', '티스토리', '카카오', '링크드인'];
+  const CONTENT_CATEGORIES = ['오늘의.ZIP', '백서'];
   const CORE = ['네이버', '홈페이지', '티스토리', '카카오']; // 시트 진행률 = COUNTIF(H:K,"발행완료")/4
   const STATUSES = [
     { key: '미작성', cls: 'todo', icon: '○' },
@@ -48,12 +49,13 @@
   const COLUMNS = [
     ['division', '사업부/서비스', ['사업부', '서비스', '사업부/서비스']],
     ['title', '콘텐츠 주제', ['콘텐츠 주제', '주제', '제목', '콘텐츠']],
+    ['category', '콘텐츠 카테고리', ['카테고리', '콘텐츠 유형', 'Category']],
     ['mainKeyword', '메인 키워드', ['메인 키워드', '메인키워드', '키워드']],
     ['naver', '네이버 노출', ['네이버 노출', '네이버노출']],
     ['subKeywords', '서브 키워드', ['서브 키워드', '서브키워드']],
     ['sourceChannel', '원문 채널', ['원문 채널', '원문채널']],
     ['publishDate', '원문 발행일', ['원문 발행일', '원문발행일', '발행일']],
-    ...CHANNELS.map((c) => ['ch:' + c, c, [c]]),
+    ...CHANNELS.map((c) => ['ch:' + c, c, c === '링크드인' ? [c, 'LinkedIn'] : [c]]),
     ['progress', '진행률', ['진행률']],
     ['owner', '담당자', ['담당자']],
     ['notes', '비고', ['비고', '메모']],
@@ -104,7 +106,7 @@
     const info = statusInfo(st);
     const label = info ? `${info.icon} ${st}` : '–';
     const cls = info ? info.cls : 'none';
-    const attrs = interactive ? `data-chip="${esc(ch)}" data-cid="${it.id}" title="${esc(ch)}: 눌러서 다음 단계로" tabindex="0" role="button"` : '';
+    const attrs = interactive && mayWrite ? `data-chip="${esc(ch)}" data-cid="${esc(it.id)}" title="${esc(ch)}: 눌러서 다음 단계로" tabindex="0" role="button"` : '';
     return `<span class="chip st-${cls}" ${attrs}>${esc(label)}</span>`;
   }
   function progressCell(it) {
@@ -116,15 +118,15 @@
   function seed() { return (window.SEED_DATA || []).map(normalize); }
   function load() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = recordStorage.getItem(STORAGE_KEY);
       if (raw) return JSON.parse(raw).map(normalize);
     } catch (e) { /* 저장소를 쓸 수 없으면 처음 데이터로 시작 */ }
     return seed();
   }
   function save() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); }
-    catch (e) { if (!cloud.db) toast('브라우저 저장에 실패했습니다. JSON 백업을 받아 두세요.'); }
-    pushCollection('items', items);
+    if (!mayWrite) return;
+    try { recordStorage.setItem(STORAGE_KEY, JSON.stringify(items)); }
+    catch (e) { toast('브라우저 저장에 실패했습니다. JSON 백업을 받아 두세요.'); }
   }
   function normDivision(v) {
     const s = String(v || '').replace(/^[^\p{L}\p{N}]+/u, '').trim(); // 앞의 이모지 제거
@@ -139,11 +141,43 @@
     const alias = { 발행: DONE, 완료: DONE, 검수: '검수중', 검토중: '검수중', 예약발행: '예약', 작성: '작성중', 진행중: '작성중' };
     return alias[s] || s;
   }
+  const localeLabels = { en: '영어', ja: '일본어' };
+  const localeStatuses = ['미착수', '번역 중', '검수 중', '발행 예정', '발행 완료'];
+  const rankEngines = ['네이버', 'Google'];
+  const rankMarkets = ['한국어 · 한국', '영어 · 미국', '일본어 · 일본'];
+
+  function normalizeRank(entry) {
+    const keyword = typeof entry?.keyword === 'string' ? entry.keyword.trim() : '';
+    if (!keyword || !rankEngines.includes(entry.engine) || !rankMarkets.includes(entry.market) ||
+        typeof entry.date !== 'string' || normDate(entry.date) !== entry.date) return null;
+    const position = entry.position;
+    if (position !== null && (!Number.isInteger(position) || position < 1 || position > 1000)) return null;
+    return { keyword, engine: entry.engine, market: entry.market, date: entry.date, position };
+  }
+
+  function normalizeLocale(value) {
+    return {
+      status: localeStatuses.includes(value?.status) ? value.status : '미착수',
+      title: String(value?.title || '').trim(),
+      owner: String(value?.owner || '').trim(),
+      date: normDate(value?.date),
+      url: httpLink(value?.url),
+    };
+  }
+
+  function httpLink(value) {
+    try {
+      const url = new URL(value);
+      return ['https:', 'http:'].includes(url.protocol) ? url.href : '';
+    } catch { return ''; }
+  }
+
   function normalize(raw) {
     const ch = raw.channels || {};
     const it = {
-      id: raw.id || uid(),
+      id: raw.id ? String(raw.id) : uid(),
       division: normDivision(raw.division),
+      category: CONTENT_CATEGORIES.includes(raw.category) ? raw.category : '',
       title: String(raw.title || '').trim(),
       mainKeyword: String(raw.mainKeyword || '').trim(),
       naver: (() => { const n = String(raw.naver || '').trim(); return /^y(es)?$/i.test(n) ? 'Y' : /^n(o)?$/i.test(n) ? 'N' : n; })(),
@@ -151,25 +185,23 @@
       sourceChannel: String(raw.sourceChannel || '').trim(),
       publishDate: normDate(raw.publishDate),
       channels: {},
+      stage: ['기획', '초안', '검수', '발행'].includes(raw.stage) ? raw.stage : '',
+      locales: Object.fromEntries(Object.keys(localeLabels).map(key => [key, normalizeLocale(raw.locales?.[key])])),
+      rankings: Array.isArray(raw.rankings) ? raw.rankings.map(normalizeRank).filter(Boolean) : [],
+      publishUrl: String(raw.publishUrl || '').trim(),
+      result: String(raw.result || '').trim(),
+      learning: String(raw.learning || '').trim(),
       owner: String(raw.owner || '').trim(),
       notes: String(raw.notes || ''),
       updatedAt: raw.updatedAt || new Date().toISOString(),
     };
     CHANNELS.forEach((c) => { it.channels[c] = normStatus(ch[c] ?? raw['ch:' + c]); });
+    const legacyInstagram = normStatus(ch['인스타'] ?? ch['인스타그램'] ?? raw['ch:인스타']);
+    if (legacyInstagram) it.channels['인스타'] = legacyInstagram;
     return it;
   }
 
   // ---------- 상태 ----------
-  const cloud = { db: null, mode: 'local', auth: '', authed: false, connecting: false, pending: 0, error: '' };
-  // Netlify 사이트에서 로그인하지 않았으면 보기 전용. claude.ai 링크와 파일 열기는 항상 수정 가능.
-  const canEdit = () => cloud.mode !== 'netlify' || cloud.authed;
-  function viewOnlyNotice() { toast('보기 전용입니다. 오른쪽 위 ‘로그인’을 누르면 수정할 수 있어요.'); }
-  function applyEditMode() {
-    document.body.classList.toggle('read-only', !canEdit());
-    const net = cloud.mode === 'netlify';
-    $('#btn-login').hidden = !net || cloud.authed;
-    $('#btn-logout').hidden = !net || !cloud.authed;
-  }
   let items = load();
   const ui = {
     view: 'dashboard',
@@ -182,13 +214,15 @@
   function filtered({ ignorePeriod = false } = {}) {
     const q = $('#f-search').value.trim().toLowerCase();
     const dv = $('#f-division').value, src = $('#f-source').value, pr = $('#f-progress').value, ow = $('#f-owner').value;
+    const category = $('#f-category').value;
     const range = ignorePeriod ? null : periodRange();
     return items.filter((it) => {
       if (dv && it.division !== dv) return false;
+      if (category && it.category !== category) return false;
       if (src && it.sourceChannel !== src) return false;
       if (pr && stage(it) !== pr) return false;
       if (ow && it.owner !== ow) return false;
-      if (q && ![it.title, it.mainKeyword, it.subKeywords, it.notes, it.division].join(' ').toLowerCase().includes(q)) return false;
+      if (q && ![it.title, it.mainKeyword, it.subKeywords, it.notes, it.division, it.category].join(' ').toLowerCase().includes(q)) return false;
       if (range) {
         const d = parseDate(it.publishDate);
         if (!d || d < range[0] || d > range[1]) return false;
@@ -217,11 +251,12 @@
       el.value = values.includes(cur) ? cur : '';
     };
     fill('#f-division', allDivisions(), '모든 사업부/서비스', divLabel);
-    if (canEdit()) $('#f-division').insertAdjacentHTML('beforeend', '<option value="__add__">+ 사업부 추가…</option>');
+    if (mayWrite) $('#f-division').insertAdjacentHTML('beforeend', '<option value="__add__">+ 사업부 추가…</option>');
+    fill('#f-category', CONTENT_CATEGORIES, '모든 카테고리');
     fill('#f-source', uniq(items.map((i) => i.sourceChannel)), '모든 원문 채널');
     fill('#f-owner', uniq(items.map((i) => i.owner)), '모든 담당자');
     $('#dl-owner').innerHTML = uniq(items.map((i) => i.owner)).map((v) => `<option value="${esc(v)}">`).join('');
-    $('#dl-source').innerHTML = uniq(['네이버 블로그', '스티비', ...items.map((i) => i.sourceChannel)]).map((v) => `<option value="${esc(v)}">`).join('');
+    $('#dl-source').innerHTML = uniq(['네이버 블로그', '스티비', '링크드인', ...items.map((i) => i.sourceChannel)]).map((v) => `<option value="${esc(v)}">`).join('');
   }
 
   // ---------- 렌더 ----------
@@ -233,6 +268,7 @@
     if (ui.view === 'calendar') renderCalendar();
     if (ui.view === 'keywords') renderKeywords();
     if (ui.view === 'blog') renderBlog();
+    if (ui.view === 'growth') renderGrowth();
   }
 
   function renderDashboard() {
@@ -325,7 +361,7 @@
         <th>원문 발행일</th><th>콘텐츠 주제</th>${CHANNELS.map((c) => `<th>${c}</th>`).join('')}<th>진행률</th>
       </tr></thead><tbody>${pending.map((i) => `<tr>
         <td class="nowrap">${i.publishDate || '–'}</td>
-        <td class="title-cell" data-id="${i.id}" title="${esc(divLabel(i.division))} | ${esc(i.title)}">${esc(divInfo(i.division).icon)} ${esc(i.title)}</td>
+        <td class="title-cell" data-id="${esc(i.id)}" title="${esc(divLabel(i.division))} | ${esc(i.title)}">${esc(divInfo(i.division).icon)} ${esc(i.title)}</td>
         ${CHANNELS.map((c) => `<td>${chip(i, c)}</td>`).join('')}<td>${progressCell(i)}</td>
       </tr>`).join('')}</tbody></table></div>` : '<p class="empty">모든 콘텐츠가 4개 채널에 배포되었습니다.</p>';
   }
@@ -349,7 +385,7 @@
       <div class="promo-div">${esc(divLabel(pick.division))}</div>
       <div class="promo-title">${esc(pick.title)}</div>
       <div class="promo-meta">${esc(pick.sourceChannel || '원문 채널 미정')} · 진행률 ${pct(progress(pick))}</div>
-      <button class="promo-btn" data-id="${pick.id}">열어 보기</button>` : `
+      <button class="promo-btn" data-id="${esc(pick.id)}">열어 보기</button>` : `
       <div class="promo-kicker">CONTENT</div>
       <div class="promo-title">발행일이 입력된 콘텐츠가 없어요</div>
       <button class="promo-btn" data-add data-edit-only>콘텐츠 등록하기</button>`;
@@ -368,7 +404,7 @@
     $('#todo-count').textContent = `${todo.length}건`;
     $('#todo').innerHTML = todo.length ? todo.slice(0, 10).map(({ it, ch }) => `
       <li>
-        <span class="up-title" data-id="${it.id}">${esc(it.title)}<span class="up-meta">${esc(divLabel(it.division))} · ${esc(it.publishDate)}</span></span>
+        <span class="up-title" data-id="${esc(it.id)}">${esc(it.title)}<span class="up-meta">${esc(divLabel(it.division))} · ${esc(it.publishDate)}</span></span>
         <span class="todo-ch"><span class="muted">${esc(ch)}</span>${chip(it, ch)}</span>
       </li>`).join('') + (todo.length > 10 ? `<li class="more" data-goto="list">+${todo.length - 10}건 더 · 운영 현황에서 보기</li>` : '')
       : '<p class="empty">남은 배포 작업이 없습니다.</p>';
@@ -387,7 +423,7 @@
   }
 
   const LIST_COLS = [
-    ['division', '사업부/서비스'], ['title', '콘텐츠 주제'], ['mainKeyword', '메인 키워드'], ['publishDate', '원문 발행일'],
+    ['division', '사업부/서비스'], ['title', '콘텐츠 주제'], ['category', '카테고리'], ['mainKeyword', '메인 키워드'], ['publishDate', '원문 발행일'],
     ...CHANNELS.map((c) => ['ch:' + c, c]), ['progress', '진행률'], ['notes', '비고'],
   ];
   function renderList() {
@@ -407,7 +443,8 @@
     $('#content-table tbody').innerHTML = list.map((i) => `
       <tr>
         <td>${divBadge(i.division)}</td>
-        <td class="title-cell" data-id="${i.id}" title="${esc(i.title)}">${esc(i.title)}<span class="cell-meta">${esc(i.sourceChannel || '원문 채널 미정')} · ${esc(i.owner || '담당자 없음')}</span></td>
+        <td class="title-cell" data-id="${esc(i.id)}" title="${esc(i.title)}">${esc(i.title)}<span class="cell-meta">${esc(i.sourceChannel || '원문 채널 미정')} · ${esc(i.owner || '담당자 없음')}${i.stage ? ' · ' + esc(i.stage) : ''}</span></td>
+        <td>${esc(i.category || '–')}</td>
         <td class="wrap">${esc(i.mainKeyword || '–')}<span class="cell-meta">노출 ${naverBadge(i.naver)}</span></td>
         <td class="nowrap">${i.publishDate || '–'}</td>
         ${CHANNELS.map((c) => `<td>${chip(i, c)}</td>`).join('')}
@@ -435,7 +472,7 @@
       const iso = toISO(d), its = byDate[iso] || [];
       html += `<div class="cal-cell ${d.getMonth() !== m.getMonth() ? 'is-out' : ''} ${iso === t ? 'is-today' : ''}" data-date="${iso}">
         <span class="cal-day">${d.getDate()}</span>
-        ${its.slice(0, 4).map((i) => `<div class="cal-item" style="--c:${divColor(i.division)}" data-id="${i.id}" title="${esc(divLabel(i.division))} | ${esc(i.title)} · 진행률 ${pct(progress(i))}">${esc(divInfo(i.division).icon)} ${esc(i.title)}</div>`).join('')}
+        ${its.slice(0, 4).map((i) => `<div class="cal-item" style="--c:${divColor(i.division)}" data-id="${esc(i.id)}" title="${esc(divLabel(i.division))} | ${esc(i.title)} · 진행률 ${pct(progress(i))}">${esc(divInfo(i.division).icon)} ${esc(i.title)}</div>`).join('')}
         ${its.length > 4 ? `<span class="muted">+${its.length - 4}건 더</span>` : ''}
       </div>`;
     }
@@ -464,7 +501,7 @@
         <td>${naverBadge(i.naver)}</td>
         <td class="tags-cell">${i.subKeywords ? i.subKeywords.split(',').map((s) => s.trim()).filter(Boolean).map((s) => `<span class="tag">${esc(s)}</span>`).join('') : '<span class="muted">–</span>'}</td>
         <td>${divBadge(i.division)}</td>
-        <td class="title-cell" data-id="${i.id}" title="${esc(i.title)}">${esc(i.title)}</td>
+        <td class="title-cell" data-id="${esc(i.id)}" title="${esc(i.title)}">${esc(i.title)}</td>
         <td class="nowrap">${i.publishDate || '–'}</td>
       </tr>`;
     }).join('');
@@ -581,30 +618,216 @@
 
   // ---------- 편집 모달 ----------
   const dlg = $('#editor'), form = $('#editor-form');
+  $('#e-category').append(...CONTENT_CATEGORIES.map(value => new Option(value)));
   $('#e-channels').insertAdjacentHTML('beforeend', CHANNELS.map((c) => `
     <label>${c}<select name="ch:${c}" id="e-ch-${c}"><option value="">(빈칸)</option>${STATUS_KEYS.map((s) => `<option>${s}</option>`).join('')}</select></label>`).join(''));
 
+  const localeFields = $('#locale-fields');
+  localeFields.innerHTML = Object.entries(localeLabels).map(([key, label]) => `
+    <fieldset class="locale-fields"><legend>${label}</legend>
+      <label>진행 상태<select name="${key}:status">${localeStatuses.map(status => `<option>${status}</option>`).join('')}</select></label>
+      <label>번역 제목<input name="${key}:title" maxlength="200"></label>
+      <label>담당자<input name="${key}:owner" maxlength="100"></label>
+      <label>발행일<input name="${key}:date" type="date"></label>
+      <label>발행 링크<input name="${key}:url" type="url" maxlength="2048"></label>
+    </fieldset>`).join('');
+
+  const rank = Object.fromEntries(
+    ['engine', 'market', 'keyword', 'date', 'position', 'absent', 'message', 'history', 'search'].map(key => [key, $('#rank-' + key)]),
+  );
+  let draftRankings = [];
+
+  const rankKey = entry => JSON.stringify([entry.engine, entry.market, entry.keyword.toLowerCase()]);
+  const rankText = entry => entry.position === null ? '미노출' : entry.position + '위';
+  const newestRankFirst = (a, b) => b.date.localeCompare(a.date);
+
+  function updateSearch() {
+    const keyword = rank.keyword.value.trim();
+    const google = rank.engine.value === 'Google';
+    const [hl, gl] = [['ko', 'kr'], ['en', 'us'], ['ja', 'jp']][rank.market.selectedIndex];
+    const url = new URL(google ? 'https://www.google.com/search' : 'https://search.naver.com/search.naver');
+    if (keyword) url.searchParams.set(google ? 'q' : 'query', keyword);
+    if (google) {
+      url.searchParams.set('hl', hl);
+      url.searchParams.set('gl', gl);
+    }
+    rank.search.href = url.href;
+  }
+
+  function renderRankHistory() {
+    rank.history.replaceChildren();
+    for (const entry of [...draftRankings].sort(newestRankFirst)) {
+      const row = document.createElement('li');
+      const description = [entry.date, entry.engine, entry.market, entry.keyword, rankText(entry)].join(' · ');
+      const label = document.createElement('span');
+      label.textContent = description;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'btn btn-sm';
+      remove.textContent = '이력 삭제';
+      remove.setAttribute('aria-label', description + ' 삭제');
+      remove.onclick = () => {
+        draftRankings = draftRankings.filter(item => item !== entry);
+        renderRankHistory();
+        rank.message.textContent = '콘텐츠를 저장하면 이력이 삭제됩니다.';
+        $('#rank-add').focus();
+      };
+      row.append(label, remove);
+      rank.history.append(row);
+    }
+  }
+
+  function openGrowthFields(item, section) {
+    for (const key of Object.keys(localeLabels)) {
+      const locale = item.locales[key];
+      for (const [field, value] of Object.entries(locale)) form.elements[key + ':' + field].value = value;
+    }
+    draftRankings = [...item.rankings];
+    rank.engine.value = '네이버';
+    rank.market.selectedIndex = 0;
+    rank.keyword.value = item.mainKeyword;
+    rank.date.value = toISO(today());
+    rank.position.value = '';
+    rank.position.disabled = false;
+    rank.absent.checked = false;
+    rank.message.textContent = '';
+    $('#localization-editor').open = section === '#localization-editor';
+    $('#ranking-editor').open = section === '#ranking-editor';
+    updateSearch();
+    renderRankHistory();
+  }
+
+  rank.engine.onchange = rank.market.onchange = rank.keyword.oninput = updateSearch;
+  rank.absent.onchange = () => { rank.position.disabled = rank.absent.checked; };
+  $('#rank-add').onclick = () => {
+    const entry = normalizeRank({
+      engine: rank.engine.value,
+      market: rank.market.value,
+      keyword: rank.keyword.value,
+      date: rank.date.value,
+      position: rank.absent.checked ? null : rank.position.valueAsNumber,
+    });
+    if (!entry) {
+      rank.message.textContent = '검색어와 확인일을 입력하고, 1~1000위 또는 미노출을 선택하세요.';
+      return;
+    }
+    draftRankings = draftRankings.filter(item => item.date !== entry.date || rankKey(item) !== rankKey(entry));
+    draftRankings.push(entry);
+    renderRankHistory();
+    rank.position.value = '';
+    rank.absent.checked = false;
+    rank.position.disabled = false;
+    rank.message.textContent = '콘텐츠를 저장하면 이력이 반영됩니다.';
+  };
+
+  function renderGrowth() {
+    const list = filtered({ ignorePeriod: true });
+    const rankRows = [];
+    for (const item of list) {
+      const series = new Map();
+      for (const entry of [...item.rankings].sort(newestRankFirst)) {
+        const key = rankKey(entry);
+        if (!series.has(key)) series.set(key, []);
+        series.get(key).push(entry);
+      }
+      for (const [latest, previous] of series.values()) rankRows.push({ item, latest, previous });
+    }
+    rankRows.sort((a, b) => newestRankFirst(a.latest, b.latest));
+    const rowLink = (item, section) => `<button class="btn btn-sm" data-growth-id="${esc(item.id)}" data-growth-section="${section}">${esc(item.title)}</button>`;
+    $('#ranking-overview').innerHTML = rankRows.length ? rankRows.map(({ item, latest, previous }) => {
+      let change = '–';
+      if (previous) {
+        if (previous.position === null && latest.position !== null) change = '노출 확인';
+        if (previous.position !== null && latest.position === null) change = '미노출 전환';
+        if (previous.position !== null && latest.position !== null) {
+          const delta = previous.position - latest.position;
+          change = delta === 0 ? '유지' : `${Math.abs(delta)}단계 ${delta > 0 ? '상승' : '하락'}`;
+        }
+      }
+      return `<tr><td>${rowLink(item, '#ranking-editor')}</td><td>${esc(latest.keyword)}</td>
+        <td>${esc(latest.engine)} · ${esc(latest.market)}</td><td>${rankText(latest)}${latest.position !== null && latest.position <= 10 ? ' · TOP 10' : ''}</td>
+        <td>${change}</td><td>${esc(latest.date)}</td></tr>`;
+    }).join('') : '<tr><td colspan="6">기록이 없습니다. 아래에서 콘텐츠를 열어 순위를 추가하세요.</td></tr>';
+    $('#localization-overview').innerHTML = list.length ? list.map(item => `<tr>
+      <td>${rowLink(item, '#localization-editor')}</td>
+      ${Object.values(item.locales).map(locale => { const label = [locale.status, locale.date, locale.owner].filter(Boolean).join(' · ');
+        return `<td>${esc(label)}${locale.url ? ` <a href="${esc(locale.url)}" target="_blank" rel="noopener noreferrer">발행 링크</a>` : ''}</td>`;
+      }).join('')}</tr>`).join('') : '<tr><td colspan="3">등록된 콘텐츠가 없습니다.</td></tr>';
+  }
+
+  $('#view-growth').addEventListener('click', event => {
+    const button = event.target.closest('[data-growth-id]');
+    if (button) openEditor(button.dataset.growthId, { section: button.dataset.growthSection });
+  });
+
   function openEditor(id, preset = {}) {
-    if (!canEdit()) return viewOnlyNotice();
+    if (!mayWrite && !id) return;
     const it = id ? items.find((i) => i.id === id) : null;
     ui.editingId = it ? it.id : null;
-    $('#editor-title').textContent = it ? '콘텐츠 편집' : '새 콘텐츠';
+    $('#editor-title').textContent = it ? (mayWrite ? '콘텐츠 편집' : '콘텐츠 상세') : '새 콘텐츠';
     $('#btn-delete').hidden = !it;
     form.division.innerHTML = allDivisions().map((k) => `<option value="${esc(k)}">${esc(divLabel(k))}</option>`).join('') + '<option value="__add__">+ 사업부 추가…</option>';
-    const v = it || normalize({ division: $('#f-division').value || divisionsList()[0].key, owner: items[0]?.owner || '', channels: Object.fromEntries(CHANNELS.map((c) => [c, '미작성'])), ...preset });
-    ['division', 'title', 'mainKeyword', 'naver', 'subKeywords', 'sourceChannel', 'publishDate', 'owner', 'notes'].forEach((k) => { form[k].value = v[k] || ''; });
+    const v = it || normalize({ category: $('#f-category').value, division: $('#f-division').value || divisionsList()[0].key, owner: items[0]?.owner || '', channels: Object.fromEntries(CHANNELS.map((c) => [c, '미작성'])), ...preset });
+    ['division', 'title', 'category', 'mainKeyword', 'naver', 'subKeywords', 'sourceChannel', 'publishDate', 'stage', 'publishUrl', 'result', 'learning', 'owner', 'notes'].forEach((k) => { form[k].value = v[k] || ''; });
     CHANNELS.forEach((c) => { form['ch:' + c].value = v.channels[c] || ''; });
+    openGrowthFields(v, preset.section);
+    const publishedLink = $('#published-link');
+    publishedLink.hidden = true;
+    publishedLink.removeAttribute('href');
+    try {
+      const url = new URL(v.publishUrl);
+      if (url.protocol === 'https:' || url.protocol === 'http:') {
+        publishedLink.href = url.href;
+        publishedLink.hidden = false;
+      }
+    } catch { /* 발행 링크가 비어 있거나 이전 백업의 주소가 잘못된 경우 */ }
+    const related = $('#related-reviews');
+    related.replaceChildren();
+    related.hidden = true;
+    if (it) {
+      try {
+        const source = recordStorage.getItem(LOCAL_KEY);
+        const reviews = source ? parseJournal(source).reviews.filter(review => review.contentId === it.id) : [];
+        if (reviews.length) {
+          const link = document.createElement('a');
+          link.href = '../#reviews';
+          link.textContent = '연결된 검수 요청';
+          const list = document.createElement('ul');
+          for (const review of reviews) {
+            const row = document.createElement('li');
+            row.textContent = [review.title, review.team, review.date, review.status].join(' · ');
+            list.append(row);
+          }
+          related.append(link, list);
+          related.hidden = false;
+        }
+      } catch { /* 콘텐츠 편집은 일지 저장소 오류와 독립적으로 동작한다. */ }
+    }
+    for (const field of form.querySelectorAll('input, select, textarea')) {
+      if (!mayWrite) field.disabled = true;
+    }
     dlg.showModal();
-    setTimeout(() => form.title.focus(), 30);
+    if (preset.section) {
+      $(preset.section).querySelector('summary').focus();
+    } else {
+      setTimeout(() => form.title.focus(), 30);
+    }
   }
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();
+    if (!mayWrite) return;
     const data = Object.fromEntries(new FormData(form).entries());
     if (!data.title.trim()) return form.title.focus();
+    data.locales = Object.fromEntries(Object.keys(localeLabels).map(key => [key,
+      Object.fromEntries(['status', 'title', 'owner', 'date', 'url'].map(field => [field, data[key + ':' + field]])),
+    ]));
+    data.rankings = draftRankings;
     data.channels = Object.fromEntries(CHANNELS.map((c) => [c, data['ch:' + c]]));
     if (ui.editingId) {
       const idx = items.findIndex((i) => i.id === ui.editingId);
+      const legacyInstagram = items[idx].channels['인스타'];
+      if (legacyInstagram) data.channels['인스타'] = legacyInstagram;
       items[idx] = normalize({ ...data, id: ui.editingId, updatedAt: new Date().toISOString() });
       toast('저장했습니다.');
     } else {
@@ -623,7 +846,7 @@
 
   // 상태 칩: 미작성 → 작성중 → 검수중 → 예약 → 발행완료 → (빈칸) → 미작성 …
   function cycleChip(el) {
-    if (!canEdit()) return viewOnlyNotice();
+    if (!mayWrite) return;
     const it = items.find((i) => i.id === el.dataset.cid);
     if (!it) return;
     const ch = el.dataset.chip, cur = it.channels[ch];
@@ -642,6 +865,7 @@
     if (hIdx < 0) throw new Error('"콘텐츠 주제" 열이 있는 헤더 줄을 찾을 수 없습니다.');
     const map = rows[hIdx].map((h) => {
       const c = clean(h);
+      if (['인스타', '인스타그램', 'instagram'].includes(c)) return 'ch:인스타';
       const f = COLUMNS.find(([, label, al]) => clean(label) === c || al.some((a) => clean(a) === c));
       return f ? f[0] : null;
     });
@@ -677,7 +901,7 @@
     if (xlsxLib) return xlsxLib;
     xlsxLib = new Promise((resolve, reject) => {
       const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      s.src = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
       s.onload = () => resolve(window.XLSX);
       s.onerror = () => { xlsxLib = null; reject(new Error('엑셀 읽기 도구를 불러오지 못했습니다. 인터넷 연결을 확인하거나 CSV로 저장해 가져오세요.')); };
       document.head.appendChild(s);
@@ -735,15 +959,20 @@
       save(); render(); toast(`${rows.length}건을 가져왔습니다.`);
     }),
     'export-csv': () => download(`멀티채널_콘텐츠_운영현황_${toISO(today())}.csv`, toCSV(filtered({ ignorePeriod: true })), 'text/csv;charset=utf-8'),
-    'export-json': () => download(`content-backup_${toISO(today())}.json`, JSON.stringify({ version: 3, items, blogStats: stats }, null, 2), 'application/json'),
+    'export-json': () => download(`content-backup_${toISO(today())}.json`, JSON.stringify({ version: 4, items, blogStats: stats, settings }, null, 2), 'application/json'),
     'import-json': () => pickFile('.json,application/json', async (f) => {
       const data = JSON.parse(await f.text());
       const arr = Array.isArray(data) ? data : data.items; // 예전 백업은 콘텐츠 배열만 있음
       if (!Array.isArray(arr)) throw new Error('올바른 백업 파일이 아닙니다.');
       const st = Array.isArray(data.blogStats) ? data.blogStats : null;
       if (!(await ask(`백업(콘텐츠 ${arr.length}건${st ? `, 블로그 성과 ${st.length}건` : ''})으로 현재 데이터를 교체할까요?`, '교체'))) return;
-      items = arr.map(normalize); save();
-      if (st) { stats = st.map(normStat); saveStats(); }
+      const importedItems = arr.map(normalize);
+      if (new Set(importedItems.map(item => item.id)).size !== importedItems.length) throw new Error('백업에 중복 콘텐츠 ID가 있습니다.');
+      const importedStats = st?.map(normStat);
+      const importedSettings = Array.isArray(data.settings) ? data.settings.map(normSetting) : null;
+      items = importedItems; save();
+      if (importedSettings) { settings = importedSettings; saveSettings(); }
+      if (importedStats) { stats = importedStats; saveStats(); }
       render(); toast('백업을 불러왔습니다.');
     }),
     'import-stats': () => pickFile('.xlsx,.xls,.xlsm,.csv,.tsv,text/csv', async (f) => {
@@ -776,7 +1005,7 @@
   // ---------- 블로그 성과 (커넥트 · 인스피언, 월별) ----------
   // 「블로그 통계(26년 N월)」 리포트 탭과 같은 구조: 블로그 × 월 = 조회수·순방문자수·체류시간·포스팅수 + 조회수 TOP5
   const BLOGS_DEFAULT = ['커넥트', '인스피언'];
-  const STATS_KEY = STORAGE_KEY + ':blog-monthly';
+  const STATS_KEY = CONTENT_STATS_KEY;
   const METRIC_LABEL = { views: '조회수', visitors: '순방문자수', dwell: '체류시간', posts: '포스팅수' };
   const statsUi = { metric: 'views', range: 12, month: '', editingId: null };
 
@@ -798,7 +1027,7 @@
   const cleanTitle = (t) => String(t || '').split(/\s+/).join(' ').trim();
   function normStat(r) {
     return {
-      id: r.id || uid(), blog: blogName(r.blog), month: parseYM(r.month || r.date),
+      id: r.id ? String(r.id) : uid(), blog: blogName(r.blog), month: parseYM(r.month || r.date),
       views: numOrNull(r.views), visitors: numOrNull(r.visitors), dwell: numOrNull(r.dwell), posts: numOrNull(r.posts),
       top: (Array.isArray(r.top) ? r.top : String(r.top || '').split('\n')).map(cleanTitle).filter(Boolean).slice(0, 5),
       memo: String(r.memo || ''),
@@ -806,12 +1035,11 @@
   }
   function seedStats() { return (window.SEED_STATS || []).map(normStat); }
   function loadStats() {
-    try { const raw = localStorage.getItem(STATS_KEY); if (raw) return JSON.parse(raw).map(normStat); } catch (e) { /* 무시 */ }
+    try { const raw = recordStorage.getItem(STATS_KEY); if (raw) return JSON.parse(raw).map(normStat); } catch (e) { /* 무시 */ }
     return seedStats();
   }
   function saveStats() {
-    try { localStorage.setItem(STATS_KEY, JSON.stringify(stats)); } catch (e) { if (!cloud.db) toast('브라우저 저장에 실패했습니다.'); }
-    pushCollection('blogStats', stats);
+    try { recordStorage.setItem(STATS_KEY, JSON.stringify(stats)); } catch (e) { toast('브라우저 저장에 실패했습니다.'); }
   }
   let stats = loadStats();
 
@@ -907,7 +1135,7 @@
         <td class="nowrap">${ymLabel(m, true)}</td>${bs.map((b) => {
           const c = map[b][m];
           if (!c) return '<td class="num muted" colspan="5">–</td>';
-          return `<td class="num clickable-cell" data-stat="${c.id}" title="${esc(c.memo || '눌러서 수정')}">${fmt(c.views)}${c.memo ? '<sup>※</sup>' : ''}</td>
+          return `<td class="num clickable-cell" data-stat="${esc(c.id)}" title="${esc(c.memo || '눌러서 수정')}">${fmt(c.views)}${c.memo ? '<sup>※</sup>' : ''}</td>
             <td class="num">${deltaHtml(growth(c.views, map[b][ymAdd(m, -1)]?.views))}</td><td class="num">${deltaHtml(growth(c.views, map[b][ymAdd(m, -12)]?.views))}</td>
             <td class="num">${fmt(c.visitors)}</td><td class="num">${fmt(c.posts)}</td>`;
         }).join('')}${bs.length > 1 ? `<td class="num"><b>${fmt(total(m, 'views'))}</b></td><td class="num">${deltaHtml(growth(total(m, 'views'), total(ymAdd(m, -1), 'views')))}</td><td class="num">${deltaHtml(growth(total(m, 'views'), total(ymAdd(m, -12), 'views')))}</td>` : ''}
@@ -1043,7 +1271,7 @@
 
   const sdlg = $('#stat-editor'), sform = $('#stat-form');
   function openStat(id, preset = {}) {
-    if (!canEdit()) return viewOnlyNotice();
+    if (!mayWrite && !id) return;
     const r = id ? stats.find((x) => x.id === id) : null;
     statsUi.editingId = r ? r.id : null;
     $('#stat-title').textContent = r ? `${r.blog} ${ymLabel(r.month, true)} 통계 수정` : '블로그 월 통계 입력';
@@ -1053,11 +1281,13 @@
     const v = r || { blog: BLOGS_DEFAULT[0], month: last ? ymAdd(last, 1) : toISO(today()).slice(0, 7), ...preset };
     ['blog', 'month', 'views', 'visitors', 'dwell', 'posts', 'memo'].forEach((k) => { sform[k].value = v[k] ?? ''; });
     sform.top.value = (v.top || []).join('\n');
+    if (!mayWrite) sform.querySelectorAll('input, select, textarea').forEach(field => { field.disabled = true; });
     sdlg.showModal();
     setTimeout(() => (r ? sform.views : sform.views).focus(), 30);
   }
   sform.addEventListener('submit', (e) => {
     e.preventDefault();
+    if (!mayWrite) return;
     const r = normStat({ ...Object.fromEntries(new FormData(sform).entries()) });
     if (!r.blog || !r.month) return;
     if (r.views == null && r.visitors == null) { sform.views.focus(); return toast('조회수나 순방문자수를 입력하세요.'); }
@@ -1106,19 +1336,96 @@
     window.scrollTo({ top: 0 });
   }
   $$('.tab').forEach((t) => t.addEventListener('click', () => setView(t.dataset.view)));
+  function makeSummarySection(container, title, lines, empty) {
+    const section = document.createElement('section');
+    const heading = document.createElement('h3');
+    heading.textContent = title;
+    section.append(heading);
+    if (lines.length) {
+      const list = document.createElement('ul');
+      for (const line of lines) {
+        const item = document.createElement('li');
+        item.textContent = line;
+        list.append(item);
+      }
+      section.append(list);
+    } else {
+      const description = document.createElement('p');
+      description.textContent = empty;
+      section.append(description);
+    }
+    container.append(section);
+  }
+
+  function readLinkedReviews(ids) {
+    try {
+      const source = recordStorage.getItem(LOCAL_KEY);
+      const journal = source ? parseJournal(source) : { reviews: [] };
+      return journal.reviews.filter(review => ids.has(review.contentId) && review.status !== '회신 완료');
+    } catch {
+      return null;
+    }
+  }
+
+  function showStatusSummary() {
+    const list = filtered();
+    const currentDate = toISO(today());
+    const dueThrough = toISO(addDays(today(), 7));
+    const content = $('#status-summary-content');
+    content.replaceChildren();
+    $('#status-summary-scope').textContent = `현재 검색 및 필터에 해당하는 콘텐츠 ${list.length}건을 집계했습니다.`;
+    if (list.length) {
+      const byStage = Map.groupBy(list, item => item.stage || '단계 미지정');
+      const stages = ['기획', '초안', '검수', '발행', '단계 미지정'].filter(label => byStage.has(label))
+        .map(label => `${label} ${byStage.get(label).length}건`);
+      makeSummarySection(content, '제작·배포 현황', [
+        stages.join(' · '),
+        `주요 4개 채널 모두 배포 완료 ${list.filter(item => progress(item) === 1).length}건`,
+      ]);
+
+      const pending = list.filter(item => item.publishDate && item.stage !== '발행' &&
+        item.channels[item.sourceChannel] !== DONE && !(!item.stage && progress(item) === 1));
+      const publisherLine = item => item.publishDate + ' · ' + item.title;
+      const byDate = (a, b) => a.publishDate.localeCompare(b.publishDate);
+      const late = pending.filter(item => item.publishDate < currentDate).sort(byDate);
+      const next = pending.filter(item => item.publishDate >= currentDate && item.publishDate <= dueThrough).sort(byDate);
+      const limitLines = (entries, describe) => {
+        const lines = entries.slice(0, 5).map(describe);
+        if (entries.length > 5) lines.push(`외 ${entries.length - 5}건`);
+        return lines;
+      };
+      makeSummarySection(content, `발행일이 지난 콘텐츠 (${late.length}건)`, limitLines(late, publisherLine), '지연된 발행 일정이 없습니다.');
+      makeSummarySection(content, `오늘부터 7일 뒤까지 발행 예정 (${next.length}건)`, limitLines(next, publisherLine), '해당 기간의 발행 일정이 없습니다.');
+
+      const titles = new Map(list.map(item => [item.id, item.title]));
+      const reviews = readLinkedReviews(titles);
+      const reviewLines = reviews?.sort((a, b) => a.date.localeCompare(b.date));
+      makeSummarySection(content, reviews ? `미회신 검수 (${reviews.length}건)` : '미회신 검수',
+        limitLines(reviewLines || [], review => [review.date, titles.get(review.contentId), review.title, review.team].join(' · ')),
+        reviews ? '연결된 미회신 검수 요청이 없습니다.' : '일지에서 검수 요청을 읽지 못했습니다.');
+
+      const localeLines = Object.entries(localeLabels).map(([key, name]) => {
+        const counts = Map.groupBy(list, item => item.locales[key].status);
+        return name + ' · ' + localeStatuses.filter(label => counts.has(label))
+          .map(label => `${label} ${counts.get(label).length}건`).join(' / ');
+      });
+      makeSummarySection(content, '영어·일본어 제작', localeLines);
+    }
+    $('#status-summary').showModal();
+  }
+
+  $('#btn-status-summary').addEventListener('click', showStatusSummary);
   $('#btn-add').addEventListener('click', () => openEditor(null));
-  const VIEW_ACTIONS = ['export-csv', 'logout'];
   $('#menu-data').addEventListener('click', (e) => {
     const a = e.target.closest('[data-action]');
-    if (!a) return;
-    if (!canEdit() && !VIEW_ACTIONS.includes(a.dataset.action)) return viewOnlyNotice();
+    if (!a || (!mayWrite && a.dataset.action !== 'export-csv')) return;
     actions[a.dataset.action]();
   });
 
-  ['#f-search', '#f-division', '#f-source', '#f-progress', '#f-owner', '#f-period']
+  ['#f-search', '#f-division', '#f-category', '#f-source', '#f-progress', '#f-owner', '#f-period']
     .forEach((s) => $(s).addEventListener(s === '#f-search' ? 'input' : 'change', render));
   $('#f-reset').addEventListener('click', () => {
-    ['#f-search', '#f-division', '#f-source', '#f-progress', '#f-owner'].forEach((s) => { $(s).value = ''; });
+    ['#f-search', '#f-division', '#f-category', '#f-source', '#f-progress', '#f-owner'].forEach((s) => { $(s).value = ''; });
     $('#f-period').value = 'all'; render();
   });
 
@@ -1201,8 +1508,7 @@
   const DIV_ICONS = ['🔗', '🧩', '☁️', '🛒', '🏭', '💳', '🛡️', '📊', '🚚', '🏷️', '📌', '⚙️'];
   let divReturn = null; // 콘텐츠 편집 창에서 열었으면 추가한 사업부를 그 창에 선택해 준다
   function saveSettings() {
-    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* 무시 */ }
-    pushCollection('settings', settings);
+    try { recordStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* 무시 */ }
   }
   function setDivisions(list) {
     settings = settings.filter((d) => d.id !== 'divisions').concat([{ id: 'divisions', list }]);
@@ -1218,7 +1524,6 @@
     }).join('');
   }
   function openDivisions(returnSelect = null) {
-    if (!canEdit()) return viewOnlyNotice();
     divReturn = returnSelect;
     $('#div-icons').innerHTML = DIV_ICONS.map((ic, i) => `<label class="icon-pick"><input type="radio" name="icon" value="${ic}" ${i === 0 ? 'checked' : ''} /><span>${ic}</span></label>`).join('')
       + '<label class="icon-pick"><input type="radio" name="icon" value="" /><span class="muted">없음</span></label>';
@@ -1277,202 +1582,6 @@
     else lastEditorDiv = form.division.value;
   });
 
-  // ---------- 서버 저장 ----------
-  // claude.ai 링크에서 열면 서버 저장소(db)에 저장하고, 파일로 열면 이 브라우저(localStorage)에만 저장한다.
-  // 화면은 브라우저 캐시로 바로 그린 뒤 서버 데이터가 오면 다시 그린다.
-  function useCap(name) { return window.claude && typeof window.claude.use === 'function' ? window.claude.use(name).catch(() => null) : Promise.resolve(null); }
-  const NORMALIZERS = { items: (r) => normalize(r), blogStats: (r) => normStat(r), settings: (r) => normSetting(r) };
-  const COLLS = {
-    items: { get: () => items, set: (r) => { items = r; }, key: STORAGE_KEY },
-    blogStats: { get: () => stats, set: (r) => { stats = r; }, key: STATS_KEY },
-    settings: { get: () => settings, set: (r) => { settings = r; }, key: SETTINGS_KEY },
-  };
-  const synced = { items: null, blogStats: null, settings: null }; // id → 서버에 있는 JSON. null이면 아직 서버 상태를 모름
-  let writeChain = Promise.resolve();
-
-  function pushCollection(name, list) {
-    const known = synced[name];
-    if (!cloud.db || !known || !canEdit()) return;
-    const now = new Map(list.map((r) => [r.id, JSON.stringify(r)]));
-    now.forEach((json, id) => { if (known.get(id) !== json) { known.set(id, json); queueWrite(name, id, JSON.parse(json)); } });
-    [...known.keys()].forEach((id) => { if (!now.has(id)) { known.delete(id); queueWrite(name, id, null); } });
-  }
-  // 문서 쓰기는 한 번에 하나씩 순서대로. 일시적 오류(unavailable)는 한 번만 다시 시도한다.
-  function queueWrite(name, id, body) {
-    cloud.pending++; setSync();
-    const ref = cloud.db.collection(name).doc(id);
-    const run = () => (body ? ref.set(body) : ref.delete());
-    writeChain = writeChain
-      .then(() => run().catch((e) => (e && e.code === 'unavailable' ? new Promise((r) => setTimeout(r, 600 + Math.random() * 900)).then(run) : Promise.reject(e))))
-      .catch((e) => {
-        cloud.error = e && e.code === 'quota_exceeded' ? '저장 공간이 가득 찼습니다. 오래된 기록을 지운 뒤 다시 시도하세요.' : '서버에 저장하지 못했습니다. 새로고침한 뒤 다시 시도하세요.';
-        toast(cloud.error);
-      })
-      .finally(() => { cloud.pending--; setSync(); });
-  }
-  function setSync() {
-    const el = $('#sync-status');
-    if (!el) return;
-    let cls = 'local', txt = '이 브라우저에만 저장';
-    if (cloud.connecting) { cls = 'busy'; txt = '서버 연결 중…'; }
-    else if (cloud.db && cloud.error) { cls = 'error'; txt = '⚠ 저장 실패 · 새로고침 필요'; }
-    else if (cloud.db && cloud.pending) { cls = 'busy'; txt = `저장 중… (${cloud.pending})`; }
-    else if (cloud.db && !canEdit()) { cls = 'viewonly'; txt = '보기 전용 · 로그인하면 수정'; }
-    else if (cloud.db) { cls = 'ok'; txt = '서버에 저장됨'; }
-    el.className = 'sync ' + cls;
-    el.textContent = txt;
-    el.title = cloud.db ? `어느 기기에서 열어도 같은 데이터가 보입니다. ${cloud.mode === 'netlify' ? '주소를 아는 누구나 볼 수 있고, 로그인한 사람만 고칠 수' : '이 링크의 소유자만 볼 수'} 있습니다.` : '이 브라우저에만 저장됩니다. 다른 기기에서는 보이지 않으니 JSON 백업을 받아 두세요.';
-  }
-  function subscribe(name) {
-    cloud.db.collection(name).onSnapshot((snap) => {
-      // 첫 응답이 캐시라 비어 있으면 서버 응답을 기다린다.
-      if (!synced[name] && snap.empty && snap.metadata.fromCache) return;
-      const rows = snap.docs.map((d) => NORMALIZERS[name](d.data()));
-      const first = !synced[name];
-      synced[name] = new Map(rows.map((r) => [r.id, JSON.stringify(r)]));
-      if (first && !rows.length) {
-        // 서버가 비어 있으면 이 브라우저에 있던 데이터를 올린다.
-        pushCollection(name, COLLS[name].get());
-      } else {
-        COLLS[name].set(rows);
-        try { localStorage.setItem(COLLS[name].key, JSON.stringify(rows)); } catch (e) { /* 캐시 실패는 무시 */ }
-      }
-      if (first) { cloud.connecting = Object.values(synced).some((v) => !v); setSync(); }
-      render();
-    }, (e) => {
-      cloud.error = e && e.code === 'revoked' ? '' : '서버와 연결이 끊어졌습니다. 새로고침하세요.';
-      if (e && e.code === 'revoked') cloud.db = null;
-      setSync();
-    });
-  }
-  // ---------- Netlify 버전: /api 함수 + 로그인 ----------
-  // 로그인 정보는 '로그인 유지'를 켜면 localStorage, 아니면 탭을 닫을 때까지 sessionStorage에 둔다.
-  const AUTH_KEY = STORAGE_KEY + ':auth';
-  const getAuth = () => { try { return sessionStorage.getItem(AUTH_KEY) || localStorage.getItem(AUTH_KEY) || ''; } catch (e) { return ''; } };
-  function setAuth(value, remember) {
-    try {
-      sessionStorage.removeItem(AUTH_KEY); localStorage.removeItem(AUTH_KEY);
-      if (value) (remember ? localStorage : sessionStorage).setItem(AUTH_KEY, value);
-    } catch (e) { /* 저장 실패 시 이번 화면에서만 로그인 */ }
-    cloud.auth = value;
-  }
-  const basic = (user, pass) => 'Basic ' + btoa(String.fromCharCode(...new TextEncoder().encode(user + ':' + pass)));
-  function api(path, opts = {}) {
-    return fetch(path, { ...opts, headers: { ...(opts.headers || {}), ...(cloud.auth ? { Authorization: cloud.auth } : {}) }, cache: 'no-store' });
-  }
-  function askLogin(message) {
-    const box = $('#login');
-    $('#login-desc').textContent = message || cloud.setupError || '로그인하면 콘텐츠와 통계를 추가·수정할 수 있습니다.';
-    $('#login-error').hidden = true;
-    if (!box.open) box.showModal();
-    setTimeout(() => $('#login-user').focus(), 30);
-  }
-  $('#login-cancel').addEventListener('click', () => $('#login').close());
-  $('#btn-login').addEventListener('click', () => askLogin());
-  $('#login-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const f = e.target, err = $('#login-error');
-    const auth = basic(f.user.value.trim(), f.password.value);
-    let res;
-    try { res = await fetch('/api/session', { headers: { Authorization: auth }, cache: 'no-store' }); } catch (x) { res = null; }
-    if (!res || !res.ok) {
-      err.textContent = !res ? '서버에 연결하지 못했습니다. 잠시 후 다시 시도하세요.' : res.status === 401 ? '아이디 또는 비밀번호가 맞지 않습니다.' : (await res.json().catch(() => ({}))).error || '로그인하지 못했습니다.';
-      err.hidden = false;
-      return;
-    }
-    setAuth(auth, f.remember.checked);
-    cloud.authed = true;
-    f.password.value = '';
-    $('#login').close();
-    applyEditMode(); setSync(); render();
-    if (!cloud.db) startNetlify(); else cloud.db.refresh();
-    toast('로그인했습니다. 이제 수정할 수 있습니다.');
-  });
-  actions.logout = () => {
-    setAuth('', false);
-    cloud.authed = false;
-    applyEditMode(); setSync(); render();
-    toast('로그아웃했습니다. 보기 전용으로 전환됩니다.');
-  };
-
-  // Netlify API를 db 저장소와 같은 모양(collection/doc/onSnapshot)으로 감싼다. 실시간 대신 화면으로 돌아올 때 다시 읽는다.
-  function netlifyDb() {
-    const subs = { items: [], blogStats: [], settings: [] };
-    let loading = null, scheduled = false;
-    const fail = (res) => {
-      if (res && res.status === 401) {
-        setAuth('', false); cloud.authed = false; applyEditMode(); render();
-        askLogin('로그인이 풀려 저장하지 못했습니다. 다시 로그인한 뒤 수정해 주세요.');
-        setTimeout(() => cloud.db && cloud.db.refresh(), 0); // 저장되지 않은 변경을 서버 내용으로 되돌린다
-        return { code: 'unauthenticated' };
-      }
-      return { code: 'unavailable' };
-    };
-    const load = () => (loading ||= api('/api/data')
-      .then((r) => (r.ok ? r.json() : Promise.reject(fail(r))))
-      .finally(() => { loading = null; }));
-    async function deliver() {
-      let data;
-      try { data = await load(); } catch (e) { cloud.error = e.code === 'unauthenticated' ? '' : '서버에서 데이터를 불러오지 못했습니다. 새로고침하세요.'; setSync(); return; }
-      cloud.error = '';
-      Object.entries(subs).forEach(([name, fns]) => {
-        const docs = (data[name] || []).map((d) => ({ id: d.id, exists: true, data: () => d }));
-        fns.forEach((next) => next({ docs, size: docs.length, empty: !docs.length, metadata: { fromCache: false, hasPendingWrites: false } }));
-      });
-    }
-    async function write(method, name, id, body) {
-      const r = await api(`/api/doc/${name}/${encodeURIComponent(id)}`, {
-        method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined,
-      }).catch(() => null);
-      if (!r || !r.ok) throw fail(r);
-    }
-    document.addEventListener('visibilitychange', () => { if (!document.hidden && !cloud.pending) deliver(); });
-    return {
-      refresh: deliver,
-      collection: (name) => ({
-        doc: (id) => ({ set: (body) => write('PUT', name, id, body), delete: () => write('DELETE', name, id) }),
-        onSnapshot: (next) => {
-          subs[name].push(next);
-          if (!scheduled) { scheduled = true; Promise.resolve().then(() => { scheduled = false; deliver(); }); }
-          return () => {};
-        },
-      }),
-    };
-  }
-  function startNetlify() {
-    cloud.mode = 'netlify';
-    cloud.db = netlifyDb();
-    applyEditMode();
-    subscribe('items');
-    subscribe('blogStats');
-    subscribe('settings');
-  }
-
-  async function connectCloud() {
-    if (!window.claude) {
-      // claude.ai 밖: Netlify 함수가 있으면 서버 저장, 없으면(파일로 열기 등) 이 브라우저에만 저장
-      if (!/^https?:$/.test(location.protocol)) { setSync(); return; }
-      cloud.auth = getAuth();
-      cloud.connecting = true; setSync();
-      let res = null;
-      try { res = await api('/api/session'); } catch (e) { res = null; }
-      if (!res || res.status === 404) { cloud.connecting = false; setSync(); return; }
-      // 로그인 상태면 수정 가능, 아니면(401·설정 없음) 보기 전용으로 연다.
-      if (res.ok) cloud.authed = true;
-      else if (res.status === 401) setAuth('', false);
-      else cloud.setupError = (await res.json().catch(() => ({}))).error || '';
-      startNetlify();
-      return;
-    }
-    cloud.connecting = true; setSync();
-    const db = await useCap('db');
-    if (!db) { cloud.connecting = false; setSync(); return; }
-    cloud.db = db;
-    subscribe('items');
-    subscribe('blogStats');
-    subscribe('settings');
-  }
-
   let resizeTimer, lastW = innerWidth;
   addEventListener('resize', () => {
     if (innerWidth === lastW) return;
@@ -1482,7 +1591,7 @@
   // ---------- 시작 ----------
   if (!window.SEED_DATA) $$('[data-action="load-seed"]').forEach((b) => { b.hidden = true; });
   try { const v = localStorage.getItem(STORAGE_KEY + ':view'); if (v && $('#view-' + v)) ui.view = v; } catch (e) { /* 무시 */ }
-  save();
   setView(ui.view);
-  connectCloud();
+  const requested = new URLSearchParams(location.search).get('item');
+  if (requested && items.some(item => item.id === requested)) openEditor(requested);
 })();
