@@ -39,3 +39,8 @@ body.team-loading > :not(#team-storage-status):not(script) {
 .team-viewer #ranking-editor .rank-actions {
   display: none !important;
 }
+
+/* Netlify injects its Deploy Preview drawer after the page markup. */
+body > [data-netlify-deploy-id][data-netlify-site-id][data-vcs] {
+  display: none !important;
+}
