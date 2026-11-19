@@ -329,15 +329,17 @@ main { padding: 0; }
 .cal-nav h2 { min-width: 120px; text-align: center; }
 .cal-mode { display: flex; align-items: center; gap: 6px; }
 .cal-legend { display: flex; flex-wrap: wrap; gap: 6px 10px; margin-bottom: 10px; }
-.cal-category {
+.cal-category, .category-badge {
   padding: 3px 8px;
   border-radius: 4px;
   font-size: 12px;
   white-space: nowrap;
-  background: var(--highlight);
-  color: #212c3a;
-  border-bottom: 2px solid var(--marker);
+  background: var(--highlight, var(--surface-2));
+  color: var(--text);
+  border-bottom: 2px solid var(--marker, var(--muted));
 }
+.category-badge { display: inline-block; }
+.cal-category, .category-badge[style] { color: #212c3a; }
 .calendar { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border-top: 1px solid var(--border); border-left: 1px solid var(--border); }
 .cal-dow { padding: 6px 8px; font-size: 12px; color: var(--muted); font-weight: 500; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--surface); }
 .cal-cell { min-height: 108px; padding: 6px; background: var(--surface); border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; min-width: 0; cursor: copy; }

@@ -468,14 +468,20 @@
     renderSideBlog();
   }
 
+  function categoryBadge(key) {
+    if (!key) return '<span class="muted">미분류</span>';
+    const category = knownCategory(key);
+    return `<span class="category-badge"${categoryStyle(category)}>${esc(divLabel(key))}</span>`;
+  }
+
   const LIST_COLS = [
-    ['division', '사업부/서비스'], ['title', '콘텐츠 주제'], ['category', '카테고리'], ['mainKeyword', '메인 키워드'], ['publishDate', '원문 발행일'],
+    ['category', '콘텐츠 카테고리'], ['title', '콘텐츠 주제'], ['mainKeyword', '메인 키워드'], ['publishDate', '원문 발행일'],
     ...CHANNELS.map((c) => ['ch:' + c, c]), ['progress', '진행률'], ['notes', '비고'],
   ];
   function renderList() {
     const list = filtered();
     const { key, dir } = ui.sort;
-    const get = (i) => (key === 'progress' ? progress(i) : key.startsWith('ch:') ? STATUS_KEYS.indexOf(i.channels[key.slice(3)]) : key === 'division' ? allDivisions().indexOf(i.division) : i[key]);
+    const get = (i) => (key === 'progress' ? progress(i) : key.startsWith('ch:') ? STATUS_KEYS.indexOf(i.channels[key.slice(3)]) : key === 'category' ? contentCategory(i) : i[key]);
     list.sort((a, b) => {
       let x = get(a), y = get(b);
       if (typeof x === 'number') return dir === 'asc' ? x - y : y - x;
@@ -488,9 +494,8 @@
     $('#list-empty').hidden = list.length > 0;
     $('#content-table tbody').innerHTML = list.map((i) => `
       <tr>
-        <td>${divBadge(i.division)}</td>
+        <td>${categoryBadge(contentCategory(i))}</td>
         <td class="title-cell" data-id="${esc(i.id)}" title="${esc(i.title)}">${esc(i.title)}<span class="cell-meta">${esc(i.sourceChannel || '원문 채널 미정')} · ${esc(i.owner || '담당자 없음')}${i.stage ? ' · ' + esc(i.stage) : ''}</span></td>
-        <td>${esc(contentCategory(i) || '–')}</td>
         <td class="wrap">${esc(i.mainKeyword || '–')}<span class="cell-meta">노출 ${naverBadge(i.naver)}</span></td>
         <td class="nowrap">${i.publishDate || '–'}</td>
         ${CHANNELS.map((c) => `<td>${chip(i, c)}</td>`).join('')}
