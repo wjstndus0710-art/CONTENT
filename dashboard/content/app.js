@@ -6,15 +6,45 @@
 
   // ---------- 설정 ----------
   const STORAGE_KEY = CONTENT_KEY;
+  const calendarCategories = [
+    { key: 'Rtail-X', icon: '📦', highlight: '#ffe5c5', marker: '#b56b2a' },
+    { key: 'EDI', icon: '🖇️', highlight: '#dce8ff', marker: '#527ac5' },
+    { key: 'SIEM', icon: '🔐', highlight: '#eedfff', marker: '#9265b4' },
+    { key: '뉴스레터', icon: '💌', highlight: '#ffdfeb', marker: '#bf577f' },
+    { key: 'EAI', icon: '🛡️', highlight: '#d8f3e8', marker: '#408870' },
+    { key: '오늘의 보안.ZIP', icon: '🗂️', highlight: '#fff2ba', marker: '#9d7417' },
+    { key: '링크드인', icon: '💙', highlight: '#d5f1fc', marker: '#327f9d' },
+    { key: '백서', icon: '📘', highlight: '#e6edd8', marker: '#6e8842' },
+  ];
+  const categoryByName = new Map(calendarCategories.map(category => [category.key.toLowerCase(), category]));
+  const CONTENT_CATEGORIES = calendarCategories.map(category => category.key);
+
+  function knownCategory(value) {
+    const name = String(value || '').replace(/^[^\p{L}\p{N}]+/u, '').trim().toLowerCase();
+    if (name === '오늘의.zip' || name === '오늘의보안.zip') return categoryByName.get('오늘의 보안.zip');
+    if (name === 'linkedin') return categoryByName.get('링크드인');
+    return categoryByName.get(name);
+  }
+
+  function contentCategory(item) {
+    const source = knownCategory(item.sourceChannel);
+    return knownCategory(item.category) ||
+      (source?.key === '링크드인' ? source : knownCategory(item.division));
+  }
+
+  const categoryStyle = category => category
+    ? ` style="--highlight:${category.highlight};--marker:${category.marker}"`
+    : '';
+
   // 기본 사업부: 시트의 드롭다운 순서 + EAI. ‘사업부 관리’에서 바꾸면 settings/divisions 문서에 목록 전체를 저장한다.
   const BASE_DIVISIONS = [
     { key: 'Rtail-X', icon: '📦' },
-    { key: 'EDI', icon: '📁' },
+    { key: 'EDI', icon: '🖇️' },
     { key: 'SIEM', icon: '🔐' },
-    { key: '뉴스레터', icon: '📩' },
+    { key: '뉴스레터', icon: '💌' },
     { key: 'Auto-X', icon: '🚕' },
     { key: 'xCON', icon: '📋' },
-    { key: 'EAI', icon: '🔗' },
+    { key: 'EAI', icon: '🛡️' },
   ];
   const SETTINGS_KEY = 'content-dashboard:v2:settings';
   const normSetting = (r) => ({
@@ -27,7 +57,6 @@
     return doc && doc.list.length ? doc.list : BASE_DIVISIONS;
   }
   const CHANNELS = ['네이버', '홈페이지', '티스토리', '카카오', '링크드인'];
-  const CONTENT_CATEGORIES = ['오늘의.ZIP', '백서'];
   const CORE = ['네이버', '홈페이지', '티스토리', '카카오']; // 시트 진행률 = COUNTIF(H:K,"발행완료")/4
   const STATUSES = [
     { key: '미작성', cls: 'todo', icon: '○' },
@@ -177,7 +206,7 @@
     const it = {
       id: raw.id ? String(raw.id) : uid(),
       division: normDivision(raw.division),
-      category: CONTENT_CATEGORIES.includes(raw.category) ? raw.category : '',
+      category: knownCategory(raw.category)?.key || '',
       title: String(raw.title || '').trim(),
       mainKeyword: String(raw.mainKeyword || '').trim(),
       naver: (() => { const n = String(raw.naver || '').trim(); return /^y(es)?$/i.test(n) ? 'Y' : /^n(o)?$/i.test(n) ? 'N' : n; })(),
@@ -218,7 +247,7 @@
     const range = ignorePeriod ? null : periodRange();
     return items.filter((it) => {
       if (dv && it.division !== dv) return false;
-      if (category && it.category !== category) return false;
+      if (category && contentCategory(it)?.key !== category) return false;
       if (src && it.sourceChannel !== src) return false;
       if (pr && stage(it) !== pr) return false;
       if (ow && it.owner !== ow) return false;
@@ -444,7 +473,7 @@
       <tr>
         <td>${divBadge(i.division)}</td>
         <td class="title-cell" data-id="${esc(i.id)}" title="${esc(i.title)}">${esc(i.title)}<span class="cell-meta">${esc(i.sourceChannel || '원문 채널 미정')} · ${esc(i.owner || '담당자 없음')}${i.stage ? ' · ' + esc(i.stage) : ''}</span></td>
-        <td>${esc(i.category || '–')}</td>
+        <td>${esc(contentCategory(i)?.key || '–')}</td>
         <td class="wrap">${esc(i.mainKeyword || '–')}<span class="cell-meta">노출 ${naverBadge(i.naver)}</span></td>
         <td class="nowrap">${i.publishDate || '–'}</td>
         ${CHANNELS.map((c) => `<td>${chip(i, c)}</td>`).join('')}
@@ -472,12 +501,19 @@
       const iso = toISO(d), its = byDate[iso] || [];
       html += `<div class="cal-cell ${d.getMonth() !== m.getMonth() ? 'is-out' : ''} ${iso === t ? 'is-today' : ''}" data-date="${iso}">
         <span class="cal-day">${d.getDate()}</span>
-        ${its.slice(0, 4).map((i) => `<div class="cal-item" style="--c:${divColor(i.division)}" data-id="${esc(i.id)}" title="${esc(divLabel(i.division))} | ${esc(i.title)} · 진행률 ${pct(progress(i))}">${esc(divInfo(i.division).icon)} ${esc(i.title)}</div>`).join('')}
+        ${its.slice(0, 4).map((item) => {
+          const category = contentCategory(item);
+          const { icon, key } = category || divInfo(item.division);
+          const label = [key, item.title].filter(Boolean).join(' | ');
+          return `<div class="cal-item"${categoryStyle(category)} data-id="${esc(item.id)}" title="${esc(label)} · 진행률 ${pct(progress(item))}">${esc(icon)} ${esc(item.title)}</div>`;
+        }).join('')}
         ${its.length > 4 ? `<span class="muted">+${its.length - 4}건 더</span>` : ''}
       </div>`;
     }
     $('#calendar').innerHTML = html;
-    $('#cal-legend').innerHTML = allDivisions().map(divBadge).join('');
+    $('#cal-legend').innerHTML = calendarCategories.map(category =>
+      `<span class="cal-category"${categoryStyle(category)}>${esc(category.icon)} ${esc(category.key)}</span>`
+    ).join('');
   }
 
   function renderKeywords() {
