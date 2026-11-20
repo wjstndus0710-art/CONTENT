@@ -541,7 +541,13 @@
 
   function renderKeywords() {
     const list = filtered().slice().sort((a, b) => (a.publishDate || '9999').localeCompare(b.publishDate || '9999'));
-    const count = {};
+    const latestChecks = list.map((item) => {
+      const checks = [...item.rankings].reverse().sort(newestRankFirst);
+      return checks.find(entry => entry.keyword.toLowerCase() === item.mainKeyword.toLowerCase()) || checks[0];
+    });
+    const positions = latestChecks.flatMap(entry => entry?.position != null ? [entry.position] : []);
+    const bestPosition = positions.reduce((best, position) => Math.min(best, position), Infinity);
+    const count = Object.create(null);
     items.forEach((i) => { const k = i.mainKeyword.trim().toLowerCase(); if (k) count[k] = (count[k] || 0) + 1; });
     const withKw = list.filter((i) => i.mainKeyword);
     const subs = new Set(list.flatMap((i) => i.subKeywords.split(',').map((s) => s.trim()).filter(Boolean)));
@@ -551,12 +557,13 @@
       <div class="strip-item"><span>서브 키워드</span><b>${subs.size}</b></div>
       <div class="strip-item"><span>네이버 노출 Y</span><b>${list.filter((i) => i.naver === 'Y').length}</b></div>
       <div class="strip-item"><span>미확인</span><b>${list.filter((i) => !i.naver).length}</b></div>
-      <div class="strip-item"><span>중복 키워드</span><b>${dup}</b></div>`;
+      <div class="strip-item"><span>중복 키워드</span><b>${dup}</b></div>
+      <div class="strip-item"><span>최고 검색 순위</span><b>${Number.isFinite(bestPosition) ? bestPosition + '위' : '–'}</b></div>
+      <div class="strip-item"><span>검색 10위 이내</span><b>${positions.filter(position => position <= 10).length}</b></div>`;
     $('#kw-count').textContent = `${list.length}건`;
-    $('#kw-table tbody').innerHTML = list.map((i) => {
+    $('#kw-table tbody').innerHTML = list.map((i, index) => {
       const d = i.mainKeyword && count[i.mainKeyword.trim().toLowerCase()] > 1;
-      const checks = [...i.rankings].reverse().sort(newestRankFirst);
-      const latest = checks.find(entry => entry.keyword.toLowerCase() === i.mainKeyword.toLowerCase()) || checks[0];
+      const latest = latestChecks[index];
       return `<tr>
         <td class="nowrap"><b>${esc(i.mainKeyword || '–')}</b>${d ? ' <span class="dup">중복</span>' : ''}</td>
         <td>${naverBadge(i.naver)}</td>
