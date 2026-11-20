@@ -555,11 +555,14 @@
     $('#kw-count').textContent = `${list.length}건`;
     $('#kw-table tbody').innerHTML = list.map((i) => {
       const d = i.mainKeyword && count[i.mainKeyword.trim().toLowerCase()] > 1;
+      const checks = [...i.rankings].reverse().sort(newestRankFirst);
+      const latest = checks.find(entry => entry.keyword.toLowerCase() === i.mainKeyword.toLowerCase()) || checks[0];
       return `<tr>
         <td class="nowrap"><b>${esc(i.mainKeyword || '–')}</b>${d ? ' <span class="dup">중복</span>' : ''}</td>
         <td>${naverBadge(i.naver)}</td>
+        <td class="nowrap">${latest ? `<b>${rankText(latest)}</b><span class="cell-meta">${esc(latest.engine)} · ${esc(latest.market)} · ${esc(latest.date)}${latest.keyword.toLowerCase() !== i.mainKeyword.toLowerCase() ? ' · ' + esc(latest.keyword) : ''}</span>` : '<span class="muted">–</span>'}</td>
         <td class="tags-cell">${i.subKeywords ? i.subKeywords.split(',').map((s) => s.trim()).filter(Boolean).map((s) => `<span class="tag">${esc(s)}</span>`).join('') : '<span class="muted">–</span>'}</td>
-        <td>${divBadge(i.division)}</td>
+        <td>${categoryBadge(contentCategory(i))}</td>
         <td class="title-cell" data-id="${esc(i.id)}" title="${esc(i.title)}">${esc(i.title)}</td>
         <td class="nowrap">${i.publishDate || '–'}</td>
       </tr>`;
@@ -694,6 +697,7 @@
     ['engine', 'market', 'keyword', 'date', 'position', 'absent', 'message', 'history', 'search'].map(key => [key, $('#rank-' + key)]),
   );
   let draftRankings = [];
+  let defaultRankKeyword = '';
 
   const rankKey = entry => JSON.stringify([entry.engine, entry.market, entry.keyword.toLowerCase()]);
   const rankText = entry => entry.position === null ? '미노출' : entry.position + '위';
@@ -743,7 +747,8 @@
     draftRankings = [...item.rankings];
     rank.engine.value = '네이버';
     rank.market.selectedIndex = 0;
-    rank.keyword.value = item.mainKeyword;
+    defaultRankKeyword = item.mainKeyword;
+    rank.keyword.value = defaultRankKeyword;
     rank.date.value = toISO(today());
     rank.position.value = '';
     rank.position.disabled = false;
@@ -757,7 +762,16 @@
 
   rank.engine.onchange = rank.market.onchange = rank.keyword.oninput = updateSearch;
   rank.absent.onchange = () => { rank.position.disabled = rank.absent.checked; };
-  $('#rank-add').onclick = () => {
+  form.mainKeyword.addEventListener('input', () => {
+    const nextKeyword = form.mainKeyword.value.trim();
+    if (rank.keyword.value === defaultRankKeyword) {
+      rank.keyword.value = nextKeyword;
+      updateSearch();
+    }
+    defaultRankKeyword = nextKeyword;
+  });
+
+  function addRankDraft() {
     const entry = normalizeRank({
       engine: rank.engine.value,
       market: rank.market.value,
@@ -767,7 +781,8 @@
     });
     if (!entry) {
       rank.message.textContent = '검색어와 확인일을 입력하고, 1~1000위 또는 미노출을 선택하세요.';
-      return;
+      $('#ranking-editor').open = true;
+      return false;
     }
     draftRankings = draftRankings.filter(item => item.date !== entry.date || rankKey(item) !== rankKey(entry));
     draftRankings.push(entry);
@@ -776,7 +791,13 @@
     rank.absent.checked = false;
     rank.position.disabled = false;
     rank.message.textContent = '콘텐츠를 저장하면 이력이 반영됩니다.';
-  };
+    return true;
+  }
+
+  $('#rank-add').onclick = addRankDraft;
+  rank.position.addEventListener('invalid', () => {
+    $('#ranking-editor').open = true;
+  });
 
   function renderGrowth() {
     const list = filtered({ ignorePeriod: true });
@@ -869,7 +890,7 @@
     if (preset.section) {
       $(preset.section).querySelector('summary').focus();
     } else {
-      setTimeout(() => form.title.focus(), 30);
+      form.title.focus();
     }
   }
 
@@ -878,6 +899,7 @@
     if (!mayWrite) return;
     const data = Object.fromEntries(new FormData(form).entries());
     if (!data.title.trim()) return form.title.focus();
+    if ((rank.absent.checked || rank.position.value || rank.position.validity.badInput) && !addRankDraft()) return;
     data.locales = Object.fromEntries(Object.keys(localeLabels).map(key => [key,
       Object.fromEntries(['status', 'title', 'owner', 'date', 'url'].map(field => [field, data[key + ':' + field]])),
     ]));
