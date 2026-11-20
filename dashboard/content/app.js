@@ -725,6 +725,7 @@
 
   function renderRankHistory() {
     rank.history.replaceChildren();
+    $('#rank-empty').hidden = draftRankings.length > 0;
     for (const entry of [...draftRankings].sort(newestRankFirst)) {
       const row = document.createElement('li');
       const description = [entry.date, entry.engine, entry.market, entry.keyword, rankText(entry)].join(' · ');
@@ -752,6 +753,14 @@
       for (const [field, value] of Object.entries(locale)) form.elements[key + ':' + field].value = value;
     }
     draftRankings = [...item.rankings];
+    $('#rank-readonly').hidden = mayWrite;
+    const sessionLink = $('[data-team-session]');
+    const editLink = $('#rank-edit-link');
+    editLink.hidden = mayWrite || !sessionLink;
+    if (!editLink.hidden) {
+      editLink.href = sessionLink.href;
+      editLink.textContent = sessionLink.textContent;
+    }
     rank.engine.value = '네이버';
     rank.market.selectedIndex = 0;
     defaultRankKeyword = item.mainKeyword;

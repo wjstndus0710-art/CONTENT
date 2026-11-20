@@ -532,7 +532,12 @@
               <button class="btn" type="button" id="rank-add">이력 추가</button>
             </div>
             <p class="muted" id="rank-message" role="status"></p>
+            <p class="muted" id="rank-empty" hidden>등록된 검색 순위 이력이 없습니다.</p>
             <ul id="rank-history"></ul>
+            <p class="muted" id="rank-readonly" hidden>
+              순위를 입력하거나 수정하려면 관리자 편집 화면을 열어 주세요.
+              <a id="rank-edit-link" hidden></a>
+            </p>
           </details>
           <div class="span-2" id="related-reviews" hidden></div>
           <label class="span-2"
