@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>마케팅 일지</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script defer src="report-data.js"></script>
+    <script defer src="app.js"></script>
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="./">마케팅 일지</a>
+      <nav class="portal-nav" aria-label="주 메뉴">
+        <a href="content/index.html">콘텐츠 관리</a>
+      </nav>
+      <div class="header-actions">
+        <a class="sign-out" href="/signout-with-chatgpt" target="_top"
+          >로그아웃</a
+        >
+        <span class="preview-pill" id="store-pill">이 브라우저에 저장</span
+        ><button class="secondary" id="backup">백업 저장</button
+        ><button class="secondary" id="restore">백업 복원</button
+        ><input
+          id="restore-file"
+          type="file"
+          accept=".json,application/json"
+          hidden
+        />
+      </div>
+    </header>
+    <main>
+      <div class="overview">
+        <section class="intro">
+          <div>
+            <h1>오늘 업무</h1>
+            <p id="today-title"></p>
+            <p id="today-summary"></p>
+          </div>
+          <button id="add">＋ 오늘 할 일</button>
+        </section>
+        <section class="stats" aria-label="일지 현황">
+          <article>
+            <span>오늘 남은 할 일</span><strong id="stat-today">0</strong
+            ><small id="stat-today-sub"></small>
+          </article>
+          <article>
+            <span>이 주 완료율</span><strong id="stat-week">0%</strong>
+            <div class="meter"><i id="stat-week-bar"></i></div>
+          </article>
+          <article>
+            <span>이번 달 완료한 일</span><strong id="stat-month">0</strong
+            ><small id="stat-month-sub"></small>
+          </article>
+          <article>
+            <span>지난 7일 미완료</span><strong id="stat-overdue">0</strong
+            ><small>체크하거나 다음 날로 넘기세요</small>
+          </article>
+        </section>
+      </div>
+      <section id="weekly-board" class="panel weekly-board">
+        <div class="panel-head">
+          <div>
+            <h2>주간 보드</h2>
+            <p>할 일을 입력하고 Enter를 누르세요.</p>
+          </div>
+          <div class="week-nav">
+            <button class="round" id="prev-week" aria-label="이전 주">←</button>
+            <div>
+              <strong id="week-label"></strong>
+            </div>
+            <button class="round" id="next-week" aria-label="다음 주">→</button
+            ><button class="secondary" id="this-week">이번 주</button>
+          </div>
+          <div class="filters">
+            <input
+              id="search"
+              type="search"
+              aria-label="일지 검색"
+              placeholder="지난 일지 검색"
+            /><label class="inline"
+              ><input type="checkbox" id="show-weekend" />주말 보기</label
+            >
+          </div>
+        </div>
+        <p id="message" role="status"></p>
+        <div id="journal-days"></div>
+        <div id="journal-results" hidden></div>
+      </section>
+      <section class="top-grid">
+        <article class="card focus-card">
+          <label for="week-focus">이 주 목표·메모</label
+          ><textarea
+            id="week-focus"
+            rows="4"
+            maxlength="2000"
+            placeholder="예: EDI 주 2회 업로드(월·목), 금요일에는 주제 탐색"
+          ></textarea>
+          <p class="hint" id="focus-status">입력 칸 밖을 누르면 저장됩니다.</p>
+        </article>
+        <article id="schedule" class="card work-card">
+          <div class="work-head">
+            <h2>다가오는 발행·검수</h2>
+          </div>
+          <p class="hint">오늘부터 이번 주 일요일까지의 일정입니다.</p>
+          <ul id="schedule-list" class="work-list"></ul>
+        </article>
+      </section>
+      <section class="top-grid reporting-grid">
+        <article id="reviews" class="card work-card review-card">
+          <div class="work-head">
+            <h2>사업부 검수 요청</h2>
+            <button id="review-add">＋ 요청 추가</button>
+          </div>
+          <details class="review-details">
+            <summary>
+              <span id="review-count"></span> <span>요청 목록</span>
+            </summary>
+            <ul id="review-list" class="work-list"></ul>
+          </details>
+        </article>
+        <article class="card work-card">
+          <div class="work-head">
+            <h2>업무 요약</h2>
+            <a class="sign-out" href="monthly-report.html">월간 리포트</a>
+
+            <button class="secondary" id="copy-report">요약 복사</button>
+          </div>
+          <label
+            >기간
+            <select id="report-period">
+              <option value="week">주간</option>
+              <option value="month">월간</option>
+            </select></label
+          >
+          <textarea
+            id="report"
+            aria-label="자동 업무 요약"
+            readonly
+            rows="8"
+          ></textarea>
+          <p id="copy-status" class="hint" role="status"></p>
+        </article>
+      </section>
+      <dialog id="work-dialog">
+        <form id="work-form">
+          <h2 id="work-title"></h2>
+          <label>안건명<input name="title" required maxlength="160" /></label>
+          <label id="work-team-label"
+            >담당 사업부<input name="team" maxlength="100" required
+          /></label>
+          <label id="work-content-label"
+            >연결할 콘텐츠<select name="contentId"></select
+          ></label>
+          <label id="work-date-label"
+            >회신 기한<input name="date" type="date" required
+          /></label>
+          <label>상태<select name="status"></select></label>
+          <label id="work-notes-label"
+            >검수·협조 요청 요약<textarea
+              name="notes"
+              rows="3"
+              maxlength="1000"
+              required
+            ></textarea>
+          </label>
+          <p id="work-error" role="status"></p>
+          <div class="work-head">
+            <button type="button" class="secondary" id="work-cancel">
+              취소</button
+            ><button class="secondary" type="button" id="work-delete" hidden>
+              삭제</button
+            ><button type="submit">저장</button>
+          </div>
+        </form>
+      </dialog>
+    </main>
+  </body>
+</html>

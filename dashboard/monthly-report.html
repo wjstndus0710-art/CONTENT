@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>월간 리포트 · 마케팅 일지</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script defer src="report-data.js"></script>
+    <script defer src="monthly-report.js"></script>
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="./">마케팅 일지</a>
+      <nav class="portal-nav" aria-label="주 메뉴">
+        <a href="./#weekly-board">주간 보드</a>
+        <a href="./#schedule">다가오는 발행·검수</a>
+        <a href="./#reviews">검수 요청</a>
+        <a href="content/index.html">콘텐츠 관리</a>
+        <a href="monthly-report.html" aria-current="page">월간 리포트</a>
+      </nav>
+      <a class="sign-out" href="/signout-with-chatgpt" target="_top"
+        >로그아웃</a
+      >
+    </header>
+    <main>
+      <section class="intro">
+        <div>
+          <h1>월간 리포트</h1>
+        </div>
+      </section>
+      <section class="card work-card">
+        <div class="work-head">
+          <label
+            >보고 월 <input id="report-month" type="month" required
+          /></label>
+          <button id="copy-ai-request" type="button" disabled>
+            AI 요약 요청문 복사
+          </button>
+        </div>
+        <p>
+          같은 브라우저에 저장된 기록을 모읍니다. AI 요약이 필요하면 요청문을
+          복사하고 ChatGPT에서 내용을 확인한 뒤 붙여넣으세요.
+        </p>
+        <p id="monthly-status" class="hint" role="status"></p>
+        <textarea
+          id="report"
+          aria-label="월간 업무 기록"
+          readonly
+          rows="17"
+        ></textarea>
+        <label for="ai-request">AI 요약 요청문</label>
+        <textarea
+          id="ai-request"
+          aria-label="AI 요약 요청문"
+          readonly
+          rows="6"
+          hidden
+        ></textarea>
+        <a
+          class="sign-out"
+          href="https://chatgpt.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          >ChatGPT 열기</a
+        >
+      </section>
+    </main>
+  </body>
+</html>

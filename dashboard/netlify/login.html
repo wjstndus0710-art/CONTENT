@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>마케팅 일지 로그인</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/team.css" />
+    <script src="/login.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <div
+        class="card work-card"
+        style="max-width: 460px; width: 100%; margin: auto"
+      >
+        <h1 id="auth-title">마케팅 일지 로그인</h1>
+        <form id="work-form" method="post" action="/api/journal-auth">
+          <label id="email-field"
+            >이메일<input
+              name="email"
+              type="email"
+              autocomplete="username"
+              required
+          /></label>
+          <label id="password-field"
+            >비밀번호<input
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              required
+          /></label>
+          <p id="auth-status" role="status"></p>
+          <div class="work-head">
+            <button id="auth-submit">로그인</button>
+            <a href="./">마케팅 일지</a>
+          </div>
+        </form>
+        <div id="auth-help">
+          <button type="button" class="secondary" id="request-reset">
+            비밀번호 재설정 메일 받기
+          </button>
+          <details>
+            <summary>초대·재설정 링크로 비밀번호 설정</summary>
+            <form id="auth-link-form" method="post" action="/api/journal-auth">
+              <label
+                >메일 링크<input
+                  type="url"
+                  id="auth-link"
+                  autocomplete="off"
+                  required
+              /></label>
+              <p class="hint" role="status" id="auth-link-status"></p>
+              <button class="secondary">비밀번호 설정 화면 열기</button>
+            </form>
+          </details>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

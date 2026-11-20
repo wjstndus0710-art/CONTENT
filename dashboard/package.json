@@ -1,15 +1,16 @@
 {
-  "name": "content-dashboard",
-  "version": "1.0.0",
+  "name": "marketing-journal-netlify",
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12.0"
   },
   "scripts": {
+    "build": "python3 team/build.py --netlify netlify-public",
     "test": "node --test"
   },
   "dependencies": {
-    "@netlify/blobs": "11.1.1"
+    "@netlify/blobs": "11.1.9",
+    "@netlify/identity": "2.0.1"
   }
 }
